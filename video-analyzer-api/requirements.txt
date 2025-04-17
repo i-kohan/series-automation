@@ -1,0 +1,9 @@
+fastapi==0.110.0
+uvicorn==0.28.0
+pydantic==2.6.1
+pyscenedetect==0.6.3
+opencv-python-headless==4.8.1.78
+moviepy==1.0.3
+python-multipart==0.0.7
+numpy==1.26.3
+openai-whisper==20231117 

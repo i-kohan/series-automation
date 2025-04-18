@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  video-analyzer:
+    build:
+      context: ./video-analyzer-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./shared-data:/app/shared-data
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1 

@@ -8,9 +8,8 @@ import threading
 import uuid
 
 # Импортируем библиотеки для анализа видео
-from scenedetect import VideoManager, SceneManager, StatsManager
-from scenedetect.detectors import ContentDetector
-from scenedetect.scene_manager import save_images
+from scenedetect import detect, ContentDetector, SceneManager, StatsManager
+from scenedetect.video_stream import VideoStream
 from moviepy.editor import VideoFileClip
 
 # Настройка логирования
@@ -40,31 +39,18 @@ def set_task_status(task_id: str, status: str, message: str = "", progress: floa
 
 def detect_scenes(video_path: str) -> List[Dict[str, Any]]:
     """
-    Обнаружение сцен в видео с помощью PySceneDetect
+    Обнаружение сцен в видео с помощью SceneDetect
     """
     logger.info(f"Detecting scenes for {video_path}")
     
     try:
-        # Создаем VideoManager и добавляем видеофайл
-        video_manager = VideoManager([video_path])
-        stats_manager = StatsManager()
-        scene_manager = SceneManager(stats_manager)
-        
-        # Добавляем детектор содержимого
-        scene_manager.add_detector(ContentDetector(threshold=27.0))
-        
-        # Запускаем видео менеджер
-        video_manager.start()
-        
-        # Обнаруживаем сцены в видео
-        scene_manager.detect_scenes(frame_source=video_manager)
-        
-        # Получаем список сцен
-        scene_list = scene_manager.get_scene_list()
+        # Используем современный API вместо устаревшего VideoManager
+        video = VideoStream(video_path)
+        scene_list = detect(video_path, ContentDetector(threshold=27.0))
         
         logger.info(f"Обнаружено {len(scene_list)} сцен")
         
-        # Преобразуем list of tuples в список словарей с временными метками
+        # Преобразуем сцены в список словарей с временными метками
         scenes = []
         for i, scene in enumerate(scene_list):
             start_frame = scene[0].get_frames()

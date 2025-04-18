@@ -1,4 +1,4 @@
-import { VideoUploader } from "@/components/VideoUploader";
+import { VideoSelector } from "@/components/VideoSelector";
 
 export default function Home() {
   return (
@@ -11,7 +11,7 @@ export default function Home() {
       </header>
 
       <main className="w-full max-w-screen-md">
-        <VideoUploader />
+        <VideoSelector />
       </main>
 
       <footer className="mt-12 text-center text-sm text-muted-foreground">

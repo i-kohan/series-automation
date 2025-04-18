@@ -27,5 +27,5 @@ RUN mkdir -p /app/shared-data/sample-videos /app/shared-data/results
 # Открытие порта
 EXPOSE 8000
 
-# Запуск приложения
+# Команда по умолчанию, может быть переопределена в docker-compose
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 

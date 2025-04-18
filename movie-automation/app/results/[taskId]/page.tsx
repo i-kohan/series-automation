@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2 } from "lucide-react";
+import { Loader2, Clock, Play } from "lucide-react";
 import {
   getAnalysisStatus,
   AnalysisResponse,
@@ -145,33 +145,49 @@ export default function ResultsPage({
               <CardContent>
                 <div className="mb-4">
                   <p>{storyline.description}</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Длительность: {formatTime(storyline.duration)} | Начало:{" "}
-                    {formatTime(storyline.start_time)} | Конец:{" "}
-                    {formatTime(storyline.end_time)}
-                  </p>
+                  <div className="flex items-center gap-6 mt-2 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-4 w-4" />
+                      <span>
+                        Длительность: {formatTime(storyline.duration)}
+                      </span>
+                    </div>
+                    <div>
+                      Интервал: {formatTime(storyline.start_time)} -{" "}
+                      {formatTime(storyline.end_time)}
+                    </div>
+                  </div>
                 </div>
 
                 <h3 className="text-lg font-medium mb-3">
                   Сцены в сюжетной линии
                 </h3>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {storyline.scenes.map((scene) => (
-                    <div key={scene.id} className="border rounded-md p-3">
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="font-medium">{scene.id}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {formatTime(scene.duration)}
-                        </div>
-                      </div>
-                      <div className="text-sm">
-                        <div className="flex justify-between mb-1">
-                          <span>Начало:</span>
-                          <span>{formatTime(scene.start_time)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Конец:</span>
-                          <span>{formatTime(scene.end_time)}</span>
+                    <div
+                      key={scene.id}
+                      className="border rounded-md p-3 hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            className="h-8 w-8 rounded-full"
+                            title="Воспроизвести сцену"
+                          >
+                            <Play className="h-4 w-4" />
+                          </Button>
+                          <div>
+                            <div className="font-medium">{scene.id}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {formatTime(scene.start_time)} -{" "}
+                              {formatTime(scene.end_time)}
+                              <span className="ml-2">
+                                ({formatTime(scene.duration)})
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>

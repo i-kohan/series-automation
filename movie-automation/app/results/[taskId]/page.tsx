@@ -10,7 +10,17 @@ import {
   getAnalysisStatus,
   AnalysisResponse,
   Storyline,
+  Scene,
 } from "@/services/videoAnalysisService";
+import VideoPlayer from "@/components/VideoPlayer";
+
+// Интерфейс для выбранного фрагмента видео
+interface VideoFragment {
+  type: "scene" | "storyline";
+  title: string;
+  startTime: number;
+  endTime: number;
+}
 
 export default function ResultsPage({
   params,
@@ -22,6 +32,9 @@ export default function ResultsPage({
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [videoFragment, setVideoFragment] = useState<VideoFragment | null>(
+    null
+  );
   const router = useRouter();
   const { taskId } = use(params);
 
@@ -55,6 +68,31 @@ export default function ResultsPage({
     return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
   };
 
+  // Функция для воспроизведения сцены
+  const playScene = (scene: Scene) => {
+    setVideoFragment({
+      type: "scene",
+      title: `Сцена ${scene.id}`,
+      startTime: scene.start_time,
+      endTime: scene.end_time,
+    });
+  };
+
+  // Функция для воспроизведения сюжетной линии
+  const playStoryline = (storyline: Storyline) => {
+    setVideoFragment({
+      type: "storyline",
+      title: storyline.name,
+      startTime: storyline.start_time,
+      endTime: storyline.end_time,
+    });
+  };
+
+  // Закрыть видеоплеер
+  const closePlayer = () => {
+    setVideoFragment(null);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
@@ -77,9 +115,25 @@ export default function ResultsPage({
   }
 
   const { result } = analysisData;
+  const videoUrl = `/api/videos/${taskId}`; // Предполагаем такой эндпоинт для доступа к видео
 
   return (
     <div className="container mx-auto py-8 px-4">
+      {/* Модальное окно с видеоплеером */}
+      {videoFragment && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl">
+            <VideoPlayer
+              videoUrl={videoUrl}
+              startTime={videoFragment.startTime}
+              endTime={videoFragment.endTime}
+              title={videoFragment.title}
+              onClose={closePlayer}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="mb-6 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold mb-2">Результаты анализа видео</h1>
@@ -175,6 +229,7 @@ export default function ResultsPage({
                             variant="outline"
                             className="h-8 w-8 rounded-full"
                             title="Воспроизвести сцену"
+                            onClick={() => playScene(scene)}
                           >
                             <Play className="h-4 w-4" />
                           </Button>
@@ -197,7 +252,12 @@ export default function ResultsPage({
             </Card>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline">Предпросмотр</Button>
+              <Button
+                variant="outline"
+                onClick={() => playStoryline(storyline)}
+              >
+                Предпросмотр
+              </Button>
               <Button>Экспортировать клип</Button>
             </div>
           </TabsContent>

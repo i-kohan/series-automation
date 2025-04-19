@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 import threading
 import uuid
+import glob
 
 # Импортируем библиотеки для анализа видео
 from scenedetect import detect, ContentDetector, SceneManager, StatsManager
@@ -19,12 +20,74 @@ logger = logging.getLogger(__name__)
 # Словарь для хранения статусов задач
 _task_status = {}
 _task_lock = threading.Lock()
+_RESULTS_DIR = "/app/shared-data/results"
+
+def init_task_status_from_files():
+    """
+    Инициализирует статусы задач из сохраненных файлов результатов.
+    Вызывается при запуске сервера.
+    """
+    try:
+        # Создаем каталог для результатов, если он не существует
+        os.makedirs(_RESULTS_DIR, exist_ok=True)
+        
+        # Ищем все JSON файлы в каталоге результатов
+        result_files = glob.glob(os.path.join(_RESULTS_DIR, "*.json"))
+        
+        logger.info(f"Найдено {len(result_files)} файлов с результатами анализа")
+        
+        for file_path in result_files:
+            try:
+                # Извлекаем task_id из имени файла
+                task_id = os.path.basename(file_path).split('.')[0]
+                
+                # Загружаем содержимое файла
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    result = json.load(f)
+                
+                # Устанавливаем статус как завершенный
+                with _task_lock:
+                    _task_status[task_id] = {
+                        "status": "completed",
+                        "result": result,
+                        "message": "Анализ завершен. Загружено из сохраненного файла.",
+                        "progress": 1.0,
+                        "last_updated": datetime.now().isoformat()
+                    }
+                
+                logger.info(f"Загружены результаты для задачи {task_id}")
+            
+            except Exception as e:
+                logger.error(f"Ошибка при загрузке результатов из файла {file_path}: {str(e)}")
+    
+    except Exception as e:
+        logger.error(f"Ошибка при инициализации статусов задач: {str(e)}")
 
 def get_analysis_status(task_id: str) -> Dict[str, Any]:
     """Получить статус задачи анализа"""
     with _task_lock:
         if task_id not in _task_status:
+            # Проверяем, есть ли сохраненный файл результатов для этой задачи
+            result_path = os.path.join(_RESULTS_DIR, f"{task_id}.json")
+            if os.path.exists(result_path):
+                try:
+                    with open(result_path, 'r', encoding='utf-8') as f:
+                        result = json.load(f)
+                    
+                    # Устанавливаем статус как завершенный
+                    _task_status[task_id] = {
+                        "status": "completed",
+                        "result": result,
+                        "message": "Анализ завершен. Загружено из сохраненного файла.",
+                        "progress": 1.0,
+                        "last_updated": datetime.now().isoformat()
+                    }
+                    return _task_status[task_id]
+                except Exception as e:
+                    logger.error(f"Ошибка при загрузке результатов для задачи {task_id}: {str(e)}")
+            
             return {"status": "not_found", "message": "Задача не найдена"}
+        
         return _task_status[task_id]
 
 def set_task_status(task_id: str, status: str, message: str = "", progress: float = 0.0) -> None:
@@ -44,8 +107,7 @@ def detect_scenes(video_path: str) -> List[Dict[str, Any]]:
     logger.info(f"Detecting scenes for {video_path}")
     
     try:
-        # Используем современный API вместо устаревшего VideoManager
-        video = VideoStream(video_path)
+        # Используем только функцию detect без создания VideoStream
         scene_list = detect(video_path, ContentDetector(threshold=27.0))
         
         logger.info(f"Обнаружено {len(scene_list)} сцен")
@@ -200,20 +262,27 @@ def analyze_video(video_path: str, task_id: str, num_storylines: int = 3) -> Non
         }
         
         # Сохраняем результат в файл
-        result_path = f"/app/shared-data/results/{task_id}.json"
-        os.makedirs(os.path.dirname(result_path), exist_ok=True)
+        os.makedirs(_RESULTS_DIR, exist_ok=True)
+        result_path = os.path.join(_RESULTS_DIR, f"{task_id}.json")
         
         with open(result_path, 'w', encoding='utf-8') as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         
         logger.info(f"Analysis completed and saved to {result_path}")
-        set_task_status(
-            task_id, 
-            "completed", 
-            f"Анализ завершен. Обнаружено {len(scenes)} сцен и {len(storylines)} сюжетных линий.",
-            1.0
-        )
+        
+        # Обновляем статус задачи с результатом
+        with _task_lock:
+            _task_status[task_id] = {
+                "status": "completed",
+                "result": result,
+                "message": f"Анализ завершен. Обнаружено {len(scenes)} сцен и {len(storylines)} сюжетных линий.",
+                "progress": 1.0,
+                "last_updated": datetime.now().isoformat()
+            }
     
     except Exception as e:
         logger.error(f"Error analyzing video: {str(e)}")
-        set_task_status(task_id, "error", f"Ошибка при анализе видео: {str(e)}") 
+        set_task_status(task_id, "error", f"Ошибка при анализе видео: {str(e)}")
+
+# Инициализируем статусы задач при импорте модуля
+init_task_status_from_files() 

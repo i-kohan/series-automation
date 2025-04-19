@@ -95,32 +95,15 @@ async def get_analysis_result(task_id: str):
     """Получение результатов анализа или статуса выполнения"""
     status_info = get_analysis_status(task_id)
     
-    if status_info["status"] == "completed":
-        result_path = f"/app/shared-data/results/{task_id}.json"
-        
-        if not os.path.exists(result_path):
-            return JSONResponse(
-                status_code=404,
-                content={"status": "error", "message": f"Результаты анализа не найдены"}
-            )
-        
-        try:
-            with open(result_path, 'r') as f:
-                analysis_result = json.load(f)
-                
-            return {
-                "status": "completed",
-                "task_id": task_id,
-                "result": analysis_result
-            }
-        except Exception as e:
-            logger.error(f"Error reading analysis results: {str(e)}")
-            return JSONResponse(
-                status_code=500,
-                content={"status": "error", "message": f"Ошибка при чтении результатов: {str(e)}"}
-            )
+    # Если у нас есть информация о задаче, возвращаем её напрямую
+    if status_info["status"] != "not_found":
+        return status_info
     
-    return status_info
+    # Иначе возвращаем что задача не найдена
+    return JSONResponse(
+        status_code=404,
+        content={"status": "not_found", "message": "Задача не найдена"}
+    )
 
 if __name__ == "__main__":
     import uvicorn

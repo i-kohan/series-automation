@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import React, { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,14 +13,7 @@ import {
   Scene,
 } from "@/services/videoAnalysisService";
 import VideoPlayer from "@/components/VideoPlayer";
-
-// Интерфейс для выбранного фрагмента видео
-interface VideoFragment {
-  type: "scene" | "storyline";
-  title: string;
-  startTime: number;
-  endTime: number;
-}
+import { usePlayer } from "@/hooks/usePlayer";
 
 export default function ResultsPage({
   params,
@@ -32,9 +25,35 @@ export default function ResultsPage({
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [videoFragment, setVideoFragment] = useState<VideoFragment | null>(
-    null
-  );
+
+  // Используем хук usePlayer для управления видеоплеером
+  const {
+    isPlaying,
+    isMuted,
+    isLoading: videoLoading,
+    error: videoError,
+    activeFragment,
+    playerRef,
+    volume,
+    played,
+    currentTime,
+    displayCurrentTime,
+    displayDuration,
+    playFragment,
+    closePlayer,
+    togglePlay,
+    toggleMute,
+    handleVolumeChange,
+    handleSeekChange,
+    handleSeekMouseDown,
+    handleSeekMouseUp,
+    handleProgress,
+    handleDuration,
+    handleReady,
+    handleError,
+    handleTimeUpdate,
+  } = usePlayer();
+
   const router = useRouter();
   const { taskId } = use(params);
 
@@ -70,9 +89,40 @@ export default function ResultsPage({
 
   // Функция для воспроизведения сцены
   const playScene = (scene: Scene) => {
-    setVideoFragment({
-      type: "scene",
-      title: `Сцена ${scene.id}`,
+    if (!analysisData || !analysisData.result) return;
+
+    // Формируем URL для доступа к видео с учетом имени файла
+    const videoUrl = `/api/videos/${taskId}?filename=${encodeURIComponent(
+      analysisData.result.video_filename
+    )}`;
+
+    // Проверяем корректность временных меток
+    const sceneDuration = scene.end_time - scene.start_time;
+    console.log(`Playing scene ${scene.id}:`, {
+      start: scene.start_time,
+      end: scene.end_time,
+      duration: sceneDuration,
+      formattedDuration: formatTime(sceneDuration),
+    });
+
+    // Валидация данных сцены
+    if (scene.start_time >= scene.end_time) {
+      console.error(
+        `Invalid scene timing: start=${scene.start_time}, end=${scene.end_time}`
+      );
+      return;
+    }
+
+    if (scene.start_time < 0) {
+      console.error(`Invalid scene start time: ${scene.start_time}`);
+      return;
+    }
+
+    playFragment({
+      videoUrl,
+      title: `Сцена ${scene.id} (${formatTime(scene.start_time)} - ${formatTime(
+        scene.end_time
+      )})`,
       startTime: scene.start_time,
       endTime: scene.end_time,
     });
@@ -80,17 +130,19 @@ export default function ResultsPage({
 
   // Функция для воспроизведения сюжетной линии
   const playStoryline = (storyline: Storyline) => {
-    setVideoFragment({
-      type: "storyline",
+    if (!analysisData || !analysisData.result) return;
+
+    // Формируем URL для доступа к видео с учетом имени файла
+    const videoUrl = `/api/videos/${taskId}?filename=${encodeURIComponent(
+      analysisData.result.video_filename
+    )}`;
+
+    playFragment({
+      videoUrl,
       title: storyline.name,
       startTime: storyline.start_time,
       endTime: storyline.end_time,
     });
-  };
-
-  // Закрыть видеоплеер
-  const closePlayer = () => {
-    setVideoFragment(null);
   };
 
   if (loading) {
@@ -114,21 +166,40 @@ export default function ResultsPage({
     );
   }
 
+  // Безопасно извлекаем result после проверки на null
   const { result } = analysisData;
-  const videoUrl = `/api/videos/${taskId}`; // Предполагаем такой эндпоинт для доступа к видео
 
   return (
     <div className="container mx-auto py-8 px-4">
       {/* Модальное окно с видеоплеером */}
-      {videoFragment && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+      {activeFragment && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-4xl">
             <VideoPlayer
-              videoUrl={videoUrl}
-              startTime={videoFragment.startTime}
-              endTime={videoFragment.endTime}
-              title={videoFragment.title}
+              videoUrl={activeFragment.videoUrl}
+              title={activeFragment.title}
+              isPlaying={isPlaying}
+              isMuted={isMuted}
+              isLoading={videoLoading}
+              error={videoError}
+              volume={volume}
+              played={played}
+              currentTime={currentTime}
+              displayCurrentTime={displayCurrentTime}
+              displayDuration={displayDuration}
+              playerRef={playerRef}
               onClose={closePlayer}
+              onPlay={togglePlay}
+              onMute={toggleMute}
+              onVolumeChange={handleVolumeChange}
+              onSeekChange={handleSeekChange}
+              onSeekMouseDown={handleSeekMouseDown}
+              onSeekMouseUp={handleSeekMouseUp}
+              onProgress={handleProgress}
+              onDuration={handleDuration}
+              onReady={handleReady}
+              onError={handleError}
+              onTimeUpdate={handleTimeUpdate}
             />
           </div>
         </div>
@@ -179,7 +250,7 @@ export default function ResultsPage({
 
       <Tabs defaultValue={result.storylines[0]?.id || "storyline_1"}>
         <TabsList className="mb-4">
-          {result.storylines.map((storyline) => (
+          {result.storylines.map((storyline: Storyline) => (
             <TabsTrigger key={storyline.id} value={storyline.id}>
               {storyline.name}
             </TabsTrigger>
@@ -217,7 +288,7 @@ export default function ResultsPage({
                   Сцены в сюжетной линии
                 </h3>
                 <div className="space-y-2">
-                  {storyline.scenes.map((scene) => (
+                  {storyline.scenes.map((scene: Scene) => (
                     <div
                       key={scene.id}
                       className="border rounded-md p-3 hover:bg-muted/50 transition-colors"

@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Установка зависимостей для компиляции некоторых пакетов
+# Установка зависимостей для компиляции некоторых пакетов и аудио анализа
 RUN apt-get update && apt-get install -y \
     build-essential \
     libgl1-mesa-glx \
@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     ffmpeg \
+    libsndfile1 \
+    python3-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -18,11 +20,17 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Создание директорий для моделей и кэша
+RUN mkdir -p /root/.cache/torch/pyannote \
+    && mkdir -p /app/models
+
 # Копирование приложения
 COPY . .
 
 # Создание директорий для данных
-RUN mkdir -p /app/shared-data/sample-videos /app/shared-data/results
+RUN mkdir -p /app/shared-data/sample-videos \
+    /app/shared-data/results \
+    /app/shared-data/audio-results
 
 # Открытие порта
 EXPOSE 8000

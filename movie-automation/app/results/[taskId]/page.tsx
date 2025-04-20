@@ -5,15 +5,129 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Clock, Play } from "lucide-react";
+import {
+  Loader2,
+  Clock,
+  Play,
+  Volume,
+  Volume2,
+  Music,
+  MessageCircle,
+} from "lucide-react";
 import {
   getAnalysisStatus,
   AnalysisResponse,
   Storyline,
   Scene,
+  AudioAnalysis,
 } from "@/services/videoAnalysisService";
 import VideoPlayer from "@/components/VideoPlayer";
 import { usePlayer } from "@/hooks/usePlayer";
+import { Badge } from "@/components/ui/badge";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+
+// Компонент для отображения информации об аудио-анализе
+interface AudioAnalysisInfoProps {
+  audioAnalysis: AudioAnalysis | undefined;
+}
+
+const AudioAnalysisInfo = ({ audioAnalysis }: AudioAnalysisInfoProps) => {
+  if (!audioAnalysis) {
+    return (
+      <p className="text-sm text-muted-foreground italic">
+        Нет данных аудио-анализа
+      </p>
+    );
+  }
+
+  const hasTranscript =
+    audioAnalysis.transcript && audioAnalysis.transcript.trim() !== "";
+  const hasAudioFeatures =
+    audioAnalysis.audio_features &&
+    Object.keys(audioAnalysis.audio_features).length > 0;
+
+  if (!hasTranscript && !hasAudioFeatures) {
+    return (
+      <p className="text-sm text-muted-foreground italic">
+        Нет данных аудио-анализа
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {hasTranscript && (
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <MessageCircle className="h-4 w-4 text-primary" />
+            <h4 className="font-medium text-sm">Транскрипция</h4>
+            {audioAnalysis.language && (
+              <Badge variant="outline" className="text-xs">
+                {audioAnalysis.language}
+              </Badge>
+            )}
+          </div>
+          <p className="text-sm pl-6 italic">"{audioAnalysis.transcript}"</p>
+        </div>
+      )}
+
+      {hasAudioFeatures && audioAnalysis.audio_features && (
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <Volume2 className="h-4 w-4 text-primary" />
+            <h4 className="font-medium text-sm">Аудио-характеристики</h4>
+          </div>
+          <div className="grid grid-cols-2 gap-2 pl-6">
+            {audioAnalysis.audio_features.rms_energy !== undefined && (
+              <div className="text-xs flex items-center gap-1">
+                <Volume className="h-3 w-3" />
+                <span className="text-muted-foreground">Громкость:</span>
+                <span>
+                  {audioAnalysis.audio_features.rms_energy.toFixed(3)}
+                </span>
+              </div>
+            )}
+            {audioAnalysis.audio_features.tempo !== undefined && (
+              <div className="text-xs flex items-center gap-1">
+                <Music className="h-3 w-3" />
+                <span className="text-muted-foreground">Темп:</span>
+                <span>
+                  {Math.round(audioAnalysis.audio_features.tempo)} BPM
+                </span>
+              </div>
+            )}
+            {audioAnalysis.audio_features.spectral_centroid_mean !==
+              undefined && (
+              <div className="text-xs flex items-center gap-1">
+                <span className="text-muted-foreground">Яркость звука:</span>
+                <span>
+                  {audioAnalysis.audio_features.spectral_centroid_mean.toFixed(
+                    1
+                  )}
+                </span>
+              </div>
+            )}
+            {audioAnalysis.audio_features.zero_crossing_rate !== undefined && (
+              <div className="text-xs flex items-center gap-1">
+                <span className="text-muted-foreground">
+                  Zero-crossing rate:
+                </span>
+                <span>
+                  {audioAnalysis.audio_features.zero_crossing_rate.toFixed(3)}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function ResultsPage({
   params,
@@ -287,36 +401,53 @@ export default function ResultsPage({
                 <h3 className="text-lg font-medium mb-3">
                   Сцены в сюжетной линии
                 </h3>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {storyline.scenes.map((scene: Scene) => (
-                    <div
-                      key={scene.id}
-                      className="border rounded-md p-3 hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            className="h-8 w-8 rounded-full"
-                            title="Воспроизвести сцену"
-                            onClick={() => playScene(scene)}
-                          >
-                            <Play className="h-4 w-4" />
-                          </Button>
-                          <div>
-                            <div className="font-medium">{scene.id}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {formatTime(scene.start_time)} -{" "}
-                              {formatTime(scene.end_time)}
-                              <span className="ml-2">
-                                ({formatTime(scene.duration)})
-                              </span>
+                    <Accordion type="single" collapsible key={scene.id}>
+                      <AccordionItem value={scene.id}>
+                        <div className="border rounded-md p-3 hover:bg-muted/50 transition-colors">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                className="h-8 w-8 rounded-full"
+                                title="Воспроизвести сцену"
+                                onClick={() => playScene(scene)}
+                              >
+                                <Play className="h-4 w-4" />
+                              </Button>
+                              <div>
+                                <div className="font-medium">{scene.id}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {formatTime(scene.start_time)} -{" "}
+                                  {formatTime(scene.end_time)}
+                                  <span className="ml-2">
+                                    ({formatTime(scene.duration)})
+                                  </span>
+                                </div>
+                              </div>
                             </div>
+
+                            {scene.audio_analysis && (
+                              <AccordionTrigger className="p-0">
+                                <span className="text-xs text-muted-foreground">
+                                  Аудио-анализ
+                                </span>
+                              </AccordionTrigger>
+                            )}
                           </div>
+
+                          {scene.audio_analysis && (
+                            <AccordionContent className="pt-3 pb-1 px-2 mt-2 border-t">
+                              <AudioAnalysisInfo
+                                audioAnalysis={scene.audio_analysis}
+                              />
+                            </AccordionContent>
+                          )}
                         </div>
-                      </div>
-                    </div>
+                      </AccordionItem>
+                    </Accordion>
                   ))}
                 </div>
               </CardContent>

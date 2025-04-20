@@ -71,6 +71,22 @@ export async function getAnalysisStatus(taskId: string) {
 }
 
 /**
+ * Интерфейс для аудио-анализа сцены
+ */
+export interface AudioAnalysis {
+  transcript: string | null;
+  language: string | null;
+  emotions: Record<string, number> | null;
+  speakers: string[] | null;
+  audio_features: {
+    rms_energy?: number;
+    spectral_centroid_mean?: number;
+    zero_crossing_rate?: number;
+    tempo?: number;
+  } | null;
+}
+
+/**
  * Интерфейс для сцены
  */
 export interface Scene {
@@ -80,6 +96,7 @@ export interface Scene {
   duration: number;
   start_frame: number;
   end_frame: number;
+  audio_analysis?: AudioAnalysis;
 }
 
 /**

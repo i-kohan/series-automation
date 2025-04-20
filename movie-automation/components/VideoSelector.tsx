@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +26,16 @@ import {
   getSampleVideos,
   startVideoAnalysis,
   getAnalysisStatus,
+  AnalysisResult,
 } from "@/services/videoAnalysisService";
+import { useNotifications } from "@/hooks/useNotifications";
+import { VideoDetailsDialog } from "./VideoDetailsDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export function VideoSelector() {
   const [videos, setVideos] = useState<string[]>([]);
@@ -38,11 +47,17 @@ export function VideoSelector() {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult>();
   const router = useRouter();
+  const { showSuccess, showError, showInfo } = useNotifications();
+  const initialLoadCompletedRef = useRef(false);
 
   // Загрузка списка доступных видео
   useEffect(() => {
     const fetchVideos = async () => {
+      // Предотвращаем повторные запросы
+      if (initialLoadCompletedRef.current) return;
+
       try {
         setLoading(true);
         const videoList = await getSampleVideos();
@@ -50,10 +65,17 @@ export function VideoSelector() {
         if (videoList.length > 0) {
           setSelectedVideo(videoList[0]);
         }
+
+        // Уведомление только при первой загрузке
+        if (!initialLoadCompletedRef.current) {
+          showSuccess("Список видео загружен успешно");
+          initialLoadCompletedRef.current = true;
+        }
       } catch (err) {
-        setError(
-          "Не удалось загрузить список видео. Убедитесь, что сервер запущен."
-        );
+        const errorMessage =
+          "Не удалось загрузить список видео. Убедитесь, что сервер запущен.";
+        setError(errorMessage);
+        showError(errorMessage, err instanceof Error ? err : undefined);
         console.error(err);
       } finally {
         setLoading(false);
@@ -61,6 +83,7 @@ export function VideoSelector() {
     };
 
     fetchVideos();
+    // Убираем showSuccess и showError из зависимостей
   }, []);
 
   // Отслеживание прогресса анализа
@@ -77,18 +100,25 @@ export function VideoSelector() {
           setAnalyzing(false);
           setProgress(100);
           setStatusMessage("Анализ завершен успешно!");
+          setAnalysisResult(status.result);
+          showSuccess("Анализ видео успешно завершен!");
           // Перенаправляем на страницу результатов
           router.push(`/results/${taskId}`);
         } else if (status.status === "error") {
           setAnalyzing(false);
-          setError(status.message || "Произошла ошибка при анализе видео");
+          const errorMessage =
+            status.message || "Произошла ошибка при анализе видео";
+          setError(errorMessage);
+          showError(errorMessage);
         } else if (status.status === "processing") {
           setProgress(status.progress ? status.progress * 100 : 0);
           setStatusMessage(status.message || "Обработка видео...");
         }
       } catch (err) {
         console.error(err);
-        setError("Ошибка при получении статуса анализа");
+        const errorMessage = "Ошибка при получении статуса анализа";
+        setError(errorMessage);
+        showError(errorMessage, err instanceof Error ? err : undefined);
         setAnalyzing(false);
       }
     };
@@ -114,11 +144,19 @@ export function VideoSelector() {
       setProgress(0);
       setStatusMessage("Запуск анализа...");
 
+      showInfo(
+        "Запуск анализа видео",
+        `Анализ видео "${selectedVideo}" с ${numStorylines} сюжетными линиями`
+      );
+
       const response = await startVideoAnalysis(selectedVideo, numStorylines);
       setTaskId(response.task_id);
+      showInfo("Анализ запущен", `Задание ${response.task_id} запущено`);
     } catch (err) {
       console.error(err);
-      setError("Не удалось запустить анализ видео");
+      const errorMessage = "Не удалось запустить анализ видео";
+      setError(errorMessage);
+      showError(errorMessage, err instanceof Error ? err : undefined);
       setAnalyzing(false);
     }
   };
@@ -199,29 +237,51 @@ export function VideoSelector() {
               </div>
             )}
 
-            {error && !analyzing && (
-              <div className="text-sm text-destructive text-center">
-                {error}
-              </div>
+            {error && !loading && (
+              <div className="text-destructive text-sm pt-2">{error}</div>
             )}
           </>
         )}
       </CardContent>
-      <CardFooter>
-        <Button
-          onClick={handleAnalyze}
-          className="w-full"
-          disabled={!selectedVideo || analyzing || videos.length === 0}
-        >
-          {analyzing ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Анализ видео...
-            </>
-          ) : (
-            "Анализировать видео"
+      <CardFooter className="flex justify-between">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" disabled={analyzing || loading}>
+              Опции
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onClick={() => window.location.reload()}>
+              Обновить список
+            </DropdownMenuItem>
+            {analysisResult && (
+              <DropdownMenuItem
+                onClick={() => router.push(`/results/${taskId}`)}
+              >
+                Просмотр результатов
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="flex gap-2">
+          {analysisResult && (
+            <VideoDetailsDialog analysisResult={analysisResult} />
           )}
-        </Button>
+          <Button
+            disabled={!selectedVideo || analyzing || loading}
+            onClick={handleAnalyze}
+          >
+            {analyzing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Анализ...
+              </>
+            ) : (
+              "Анализировать"
+            )}
+          </Button>
+        </div>
       </CardFooter>
     </Card>
   );

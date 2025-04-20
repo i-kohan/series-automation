@@ -7,7 +7,8 @@ import json
 import logging
 from typing import List, Optional
 
-from app.services.video_analyzer import analyze_video, get_analysis_status
+from app.services.analysis_pipeline import AnalysisPipeline
+from app.services.task_manager import set_task_status, get_analysis_status, init_task_status_from_files, save_result
 
 # Настройка логирования
 logging.basicConfig(
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 # Создание директорий для хранения данных
 os.makedirs("/app/shared-data/sample-videos", exist_ok=True)
 os.makedirs("/app/shared-data/results", exist_ok=True)
+
+# Создаем экземпляр пайплайна анализа
+analysis_pipeline = AnalysisPipeline()
 
 app = FastAPI(
     title="Video Analyzer API",
@@ -76,9 +80,12 @@ async def start_analysis(request: VideoAnalysisRequest, background_tasks: Backgr
     # Генерируем ID задачи на основе имени файла
     task_id = f"{os.path.splitext(request.filename)[0]}_{request.num_storylines}"
     
+    # Устанавливаем начальный статус
+    set_task_status(task_id, "processing", "Анализ видео запущен в фоновом режиме", 0.0)
+    
     # Запускаем анализ в фоновом режиме
     background_tasks.add_task(
-        analyze_video,
+        run_analysis_pipeline,
         video_path=video_path,
         task_id=task_id,
         num_storylines=request.num_storylines
@@ -104,6 +111,36 @@ async def get_analysis_result(task_id: str):
         status_code=404,
         content={"status": "not_found", "message": "Задача не найдена"}
     )
+
+def run_analysis_pipeline(video_path: str, task_id: str, num_storylines: int = 3):
+    """
+    Функция для запуска анализа видео через пайплайн.
+    Выполняется в фоновом режиме.
+    """
+    try:
+        # Запускаем анализ через AnalysisPipeline
+        result = analysis_pipeline.analyze(
+            video_path=video_path,
+            task_id=task_id,
+            status_updater=set_task_status,
+            num_storylines=num_storylines
+        )
+        
+        if not result:
+            set_task_status(task_id, "error", "Не удалось выполнить анализ видео", 0.0)
+            return
+        
+        # Сохраняем результаты в файл и обновляем статус
+        save_result(task_id, result)
+        
+        logger.info(f"Анализ видео {os.path.basename(video_path)} завершен")
+        
+    except Exception as e:
+        logger.error(f"Error in run_analysis_pipeline: {str(e)}")
+        set_task_status(task_id, "error", f"Ошибка при анализе видео: {str(e)}", 0.0)
+
+# Инициализируем статусы задач при запуске
+init_task_status_from_files()
 
 if __name__ == "__main__":
     import uvicorn

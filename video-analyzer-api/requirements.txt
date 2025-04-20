@@ -1,9 +1,21 @@
+# Базовые зависимости
 fastapi==0.110.0
-uvicorn==0.28.0
-pydantic==2.6.1
-scenedetect==0.6.3
-opencv-python-headless==4.8.1.78
+uvicorn==0.30.0
+python-multipart==0.0.9
+pydantic==2.7.4
+starlette==0.36.3
+
+# Обработка видео
+opencv-python==4.10.0.84
+numpy==1.26.4
+scenedetect==0.6.2
 moviepy==1.0.3
-python-multipart==0.0.7
-numpy==1.26.3
-openai-whisper==20231117 
+
+# Обработка аудио
+whisper==1.1.10
+librosa==0.10.2
+pydub==0.25.1
+torch==2.3.1
+torchaudio==2.3.1
+ffmpeg-python==0.2.0
+soundfile==0.12.1 

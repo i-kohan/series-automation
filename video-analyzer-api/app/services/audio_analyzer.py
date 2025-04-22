@@ -102,6 +102,7 @@ class AudioAnalyzer(BaseAnalyzer):
         return {
             "transcript": None,
             "language": None,
+            "segments": [],
             "emotions": None,
             "speakers": None,
             "audio_features": None
@@ -118,6 +119,7 @@ class AudioAnalyzer(BaseAnalyzer):
         return {
             "transcript": transcript_result.get("transcript"),
             "language": transcript_result.get("language"),
+            "segments": transcript_result.get("segments", []),
             "emotions": None,
             "speakers": None,
             "audio_features": audio_features
@@ -135,7 +137,8 @@ class AudioAnalyzer(BaseAnalyzer):
                         verbose=False, 
                         logger=None
                     )
-                    audio_data, sr = librosa.load(temp_audio_file.name, sr=None)
+                    # Используем пониженную частоту дискретизации (16кГц достаточно для распознавания речи)
+                    audio_data, sr = librosa.load(temp_audio_file.name, sr=16000)
                     return audio_data, sr
         except Exception as e:
             logger.error(f"Error extracting audio segment: {str(e)}")
@@ -144,28 +147,46 @@ class AudioAnalyzer(BaseAnalyzer):
     def _transcribe_audio(self, audio_data: np.ndarray, sr: int) -> Dict[str, Any]:
         """Транскрибирует аудио в текст используя модель Whisper"""
         if self.whisper_model is None:
-            return {"transcript": None, "language": None}
+            return {"transcript": None, "language": None, "segments": []}
         
         try:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as temp_file:
                 import soundfile as sf
                 sf.write(temp_file.name, audio_data, sr)
                 
-                # Создаем опции для транскрипции
-                options = {}
+                # Создаем опции для транскрипции с оптимизацией скорости
+                options = {
+                    "fp16": False,            # Избегаем предупреждений FP16
+                    "beam_size": 1,           # Быстрое декодирование (вместо 5 по умолчанию)
+                    "best_of": 1,             # Не генерировать несколько вариантов
+                    "patience": 1,            # Уменьшенное терпение для бим-поиска
+                    "compression_ratio_threshold": 2.4,  # Менее строгая фильтрация
+                    "condition_on_previous_text": False  # Не обусловливать на предыдущем тексте
+                }
+                
                 if self.language:
                     options["language"] = self.language
                 
                 # Выполняем транскрипцию с учетом языка, если он указан
                 result = self.whisper_model.transcribe(temp_file.name, **options)
                 
+                # Упрощаем сегменты, оставляя только нужные данные
+                simplified_segments = []
+                for segment in result.get("segments", []):
+                    simplified_segments.append({
+                        "start": segment.get("start", 0),
+                        "end": segment.get("end", 0),
+                        "text": segment.get("text", "").strip()
+                    })
+                
                 return {
                     "transcript": result.get("text", "").strip(),
-                    "language": result.get("language", "unknown")
+                    "language": result.get("language", "unknown"),
+                    "segments": simplified_segments
                 }
         except Exception as e:
             logger.error(f"Error transcribing audio: {str(e)}")
-            return {"transcript": None, "language": None}
+            return {"transcript": None, "language": None, "segments": []}
     
     def _extract_audio_features(self, audio_data: np.ndarray, sr: int) -> Dict[str, Any]:
         """Извлекает различные характеристики аудио"""

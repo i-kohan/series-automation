@@ -187,7 +187,7 @@ class AnalysisPipeline:
             return []
     
     def _create_final_result(self, video_path: str, metadata: Dict[str, Any], 
-                            scenes: List[Dict[str, Any]], storylines: List[Dict[str, Any]], 
+                            scenes: List[Dict[str, Any]], storylines: List[Dict[str, Any]],
                             analysis_time: float) -> Dict[str, Any]:
         """Создает итоговый результат анализа"""
         return {

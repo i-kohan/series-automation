@@ -8,6 +8,7 @@ class AudioAnalysisResult(BaseModel):
     emotions: Optional[Dict[str, float]] = None
     language: Optional[str] = None
     audio_features: Optional[Dict[str, Any]] = None
+    segments: Optional[List[Dict[str, Any]]] = None
 
 class SceneInfo(BaseModel):
     """Информация о сцене из видео"""

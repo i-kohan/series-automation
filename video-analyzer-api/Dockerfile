@@ -22,7 +22,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Создание директорий для моделей и кэша
-RUN mkdir -p /root/.cache/torch/pyannote
+RUN mkdir -p /root/.cache/torch/pyannote /root/.cache/huggingface
 
 # Копирование приложения
 COPY . .

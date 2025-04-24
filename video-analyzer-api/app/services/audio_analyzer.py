@@ -2,7 +2,7 @@ import os
 import logging
 import tempfile
 import torch
-import whisper
+from faster_whisper import WhisperModel
 import librosa
 import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
@@ -30,10 +30,11 @@ class AudioAnalyzer(BaseAnalyzer):
         self.language = language
         
         try:
-            self.whisper_model = whisper.load_model(model_size)
-            logger.info("Whisper model loaded successfully")
+            # Используем CPU с INT8 квантизацией для лучшей производительности
+            self.whisper_model = WhisperModel(model_size, device="cpu", compute_type="int8")
+            logger.info("Faster Whisper model loaded successfully")
         except Exception as e:
-            logger.error(f"Error loading Whisper model: {str(e)}")
+            logger.error(f"Error loading Faster Whisper model: {str(e)}")
             self.whisper_model = None
     
     def analyze(self, data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
@@ -145,7 +146,7 @@ class AudioAnalyzer(BaseAnalyzer):
             return None, 0
     
     def _transcribe_audio(self, audio_data: np.ndarray, sr: int) -> Dict[str, Any]:
-        """Транскрибирует аудио в текст используя модель Whisper"""
+        """Транскрибирует аудио в текст используя модель Faster Whisper"""
         if self.whisper_model is None:
             return {"transcript": None, "language": None, "segments": []}
         
@@ -154,34 +155,37 @@ class AudioAnalyzer(BaseAnalyzer):
                 import soundfile as sf
                 sf.write(temp_file.name, audio_data, sr)
                 
-                # Создаем опции для транскрипции с оптимизацией скорости
-                options = {
-                    "fp16": False,            # Избегаем предупреждений FP16
-                    "beam_size": 1,           # Быстрое декодирование (вместо 5 по умолчанию)
-                    "best_of": 1,             # Не генерировать несколько вариантов
-                    "patience": 1,            # Уменьшенное терпение для бим-поиска
-                    "compression_ratio_threshold": 2.4,  # Менее строгая фильтрация
-                    "condition_on_previous_text": False  # Не обусловливать на предыдущем тексте
-                }
-                
-                if self.language:
-                    options["language"] = self.language
+                # Опции для транскрипции с faster-whisper
+                beam_size = 5
                 
                 # Выполняем транскрипцию с учетом языка, если он указан
-                result = self.whisper_model.transcribe(temp_file.name, **options)
+                if self.language:
+                    segments, info = self.whisper_model.transcribe(
+                        temp_file.name,
+                        beam_size=beam_size,
+                        language=self.language
+                    )
+                else:
+                    segments, info = self.whisper_model.transcribe(
+                        temp_file.name,
+                        beam_size=beam_size
+                    )
                 
-                # Упрощаем сегменты, оставляя только нужные данные
+                # Собираем транскрипцию из сегментов
+                transcript = ""
                 simplified_segments = []
-                for segment in result.get("segments", []):
+                
+                for segment in segments:
+                    transcript += segment.text + " "
                     simplified_segments.append({
-                        "start": segment.get("start", 0),
-                        "end": segment.get("end", 0),
-                        "text": segment.get("text", "").strip()
+                        "start": segment.start,
+                        "end": segment.end,
+                        "text": segment.text.strip()
                     })
                 
                 return {
-                    "transcript": result.get("text", "").strip(),
-                    "language": result.get("language", "unknown"),
+                    "transcript": transcript.strip(),
+                    "language": info.language,
                     "segments": simplified_segments
                 }
         except Exception as e:

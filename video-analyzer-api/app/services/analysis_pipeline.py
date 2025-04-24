@@ -70,9 +70,9 @@ class AnalysisPipeline:
                 return {}
             
             # Можно закомментировать или удалить следующие 3 строки, когда нужен полный анализ
-            if len(scenes) > 50:
-                scenes = scenes[:50]
-                logger.info(f"ВНИМАНИЕ: Анализ ограничен первыми 10 сценами из {len(scenes)} доступных (временный хардкод)")
+            # if len(scenes) > 50:
+            #     scenes = scenes[:50]
+            #     logger.info(f"ВНИМАНИЕ: Анализ ограничен первыми 10 сценами из {len(scenes)} доступных (временный хардкод)")
                 
             scenes_with_audio = self._analyze_scenes_audio(video_path, scenes, task_id, status_updater)
             

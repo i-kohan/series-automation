@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import logging
 from datetime import datetime
 from typing import Dict, List, Any, Callable, Optional
@@ -8,6 +9,7 @@ from app.services.video_metadata_extractor import VideoMetadataExtractor
 from app.services.scene_detector import SceneDetector
 from app.services.audio_analyzer import AudioAnalyzer
 from app.services.storyline_grouper import StorylineGrouper
+from app.services.task_manager import save_scenes_with_audio
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +75,10 @@ class AnalysisPipeline:
                 logger.info(f"ВНИМАНИЕ: Анализ ограничен первыми 10 сценами из {len(scenes)} доступных (временный хардкод)")
                 
             scenes_with_audio = self._analyze_scenes_audio(video_path, scenes, task_id, status_updater)
+            
+            # Сохраняем результаты анализа аудио сцен с помощью task_manager
+            save_scenes_with_audio(task_id, scenes_with_audio)
+            
             storylines = self._group_into_storylines(scenes_with_audio, num_storylines, task_id, status_updater)
             
             # Формируем и возвращаем итоговый результат

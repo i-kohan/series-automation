@@ -4,7 +4,7 @@ import logging
 import threading
 import glob
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 _task_status = {}
 _task_lock = threading.Lock()
 _RESULTS_DIR = "/app/shared-data/results"
+_SCENES_WITH_AUDIO_DIR = "/app/shared-data/scenes-with-audio"
 
 def init_task_status_from_files():
     """
@@ -21,6 +22,7 @@ def init_task_status_from_files():
     try:
         # Создаем каталог для результатов, если он не существует
         os.makedirs(_RESULTS_DIR, exist_ok=True)
+        os.makedirs(_SCENES_WITH_AUDIO_DIR, exist_ok=True)
         
         # Ищем все JSON файлы в каталоге результатов
         result_files = glob.glob(os.path.join(_RESULTS_DIR, "*.json"))
@@ -119,4 +121,26 @@ def save_result(task_id: str, result: Dict[str, Any]) -> None:
         
     except Exception as e:
         logger.error(f"Ошибка при сохранении результатов для задачи {task_id}: {str(e)}")
-        set_task_status(task_id, "error", f"Ошибка при сохранении результатов: {str(e)}", 0.0) 
+        set_task_status(task_id, "error", f"Ошибка при сохранении результатов: {str(e)}", 0.0)
+
+def save_scenes_with_audio(task_id: str, scenes_with_audio: List[Dict[str, Any]]) -> None:
+    """
+    Сохраняет результаты анализа аудио сцен в JSON-файл.
+    
+    Args:
+        task_id: Идентификатор задачи
+        scenes_with_audio: Список сцен с результатами аудио-анализа
+    """
+    try:
+        # Создаем директорию, если она не существует
+        os.makedirs(_SCENES_WITH_AUDIO_DIR, exist_ok=True)
+        
+        # Сохраняем результаты в JSON-файл
+        output_path = os.path.join(_SCENES_WITH_AUDIO_DIR, f"{task_id}.json")
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(scenes_with_audio, f, ensure_ascii=False, indent=2)
+        
+        logger.info(f"Scenes with audio analysis for task {task_id} saved to {output_path}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении аудио-анализа сцен для задачи {task_id}: {str(e)}") 

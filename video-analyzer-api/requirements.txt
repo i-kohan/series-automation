@@ -15,4 +15,9 @@ ffmpeg-python==0.2.0
 faster-whisper==1.1.1
 librosa==0.10.2
 torch==2.3.1
-soundfile==0.12.1 
+soundfile==0.12.1
+
+# Дополнительные библиотеки для работы с русским языком
+transformers==4.46.3
+nltk==3.8.1
+pymorphy2==0.9.1 

@@ -21,8 +21,8 @@ os.makedirs("/app/shared-data/sample-videos", exist_ok=True)
 os.makedirs("/app/shared-data/results", exist_ok=True)
 
 # Настройки для анализатора
-MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "small")
-LANGUAGE = os.environ.get("WHISPER_LANGUAGE", None)
+MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "large-v3")
+LANGUAGE = os.environ.get("WHISPER_LANGUAGE", "ru")
 
 # Создаем экземпляр пайплайна анализа
 analysis_pipeline = AnalysisPipeline(model_size=MODEL_SIZE, language=LANGUAGE)

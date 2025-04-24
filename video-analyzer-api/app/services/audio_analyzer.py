@@ -14,25 +14,29 @@ logger = logging.getLogger(__name__)
 
 class AudioAnalyzer(BaseAnalyzer):
     """
-    Анализатор аудиодорожки видео, извлекает информацию из аудио.
+    Анализатор аудиодорожки видео, оптимизированный для русского языка.
     """
     
-    def __init__(self, model_size: str = "small", language: Optional[str] = None):
+    def __init__(self, model_size: str = "large-v3", language: Optional[str] = "ru"):
         """
-        Инициализация моделей для анализа аудио
+        Инициализация моделей для анализа аудио с оптимизацией для русского языка
         
         Args:
-            model_size: Размер модели Whisper ("tiny", "base", "small", "medium", "large")
-            language: Язык для Whisper модели (опционально)
+            model_size: Размер модели Whisper ("tiny", "base", "small", "medium", "large", "large-v3")
+            language: Язык для Whisper модели (по умолчанию "ru" для русского)
         """
-        logger.info(f"Initializing AudioAnalyzer with model_size={model_size}...")
+        logger.info(f"Initializing Russian-optimized AudioAnalyzer with model_size={model_size}, language={language}...")
         self.model_size = model_size
         self.language = language
         
         try:
-            # Используем CPU с INT8 квантизацией для лучшей производительности
-            self.whisper_model = WhisperModel(model_size, device="cpu", compute_type="int8")
-            logger.info("Faster Whisper model loaded successfully")
+            # Используем GPU, если доступен, иначе CPU с INT8 квантизацией
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            compute_type = "float16" if device == "cuda" else "int8"
+            
+            logger.info(f"Using device: {device} with compute_type: {compute_type}")
+            self.whisper_model = WhisperModel(model_size, device=device, compute_type=compute_type)
+            logger.info(f"Faster Whisper model '{model_size}' loaded successfully")
         except Exception as e:
             logger.error(f"Error loading Faster Whisper model: {str(e)}")
             self.whisper_model = None
@@ -146,7 +150,7 @@ class AudioAnalyzer(BaseAnalyzer):
             return None, 0
     
     def _transcribe_audio(self, audio_data: np.ndarray, sr: int) -> Dict[str, Any]:
-        """Транскрибирует аудио в текст используя модель Faster Whisper"""
+        """Транскрибирует аудио в текст используя модель Faster Whisper с оптимизацией для русского языка"""
         if self.whisper_model is None:
             return {"transcript": None, "language": None, "segments": []}
         
@@ -155,21 +159,22 @@ class AudioAnalyzer(BaseAnalyzer):
                 import soundfile as sf
                 sf.write(temp_file.name, audio_data, sr)
                 
-                # Опции для транскрипции с faster-whisper
+                # Опции транскрипции, оптимизированные для русского языка
                 beam_size = 5
+                temperature = 0.0  # Более детерминистический результат
+                condition_on_previous_text = True  # Улучшает связность длинных фрагментов
+                vad_filter = True  # Фильтрация тишины
                 
-                # Выполняем транскрипцию с учетом языка, если он указан
-                if self.language:
-                    segments, info = self.whisper_model.transcribe(
-                        temp_file.name,
-                        beam_size=beam_size,
-                        language=self.language
-                    )
-                else:
-                    segments, info = self.whisper_model.transcribe(
-                        temp_file.name,
-                        beam_size=beam_size
-                    )
+                # Выполняем транскрипцию с русским языком
+                segments, info = self.whisper_model.transcribe(
+                    temp_file.name,
+                    language=self.language,  # Указываем русский язык
+                    beam_size=beam_size,
+                    temperature=temperature,
+                    condition_on_previous_text=condition_on_previous_text,
+                    vad_filter=vad_filter,
+                    vad_parameters={"min_silence_duration_ms": 500}  # Более агрессивная фильтрация тишины
+                )
                 
                 # Собираем транскрипцию из сегментов
                 transcript = ""

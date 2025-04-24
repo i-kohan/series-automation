@@ -34,7 +34,8 @@ COPY . .
 
 # Создание необходимых директорий для данных
 RUN mkdir -p /app/shared-data/sample-videos \
-    /app/shared-data/results
+    /app/shared-data/results \
+    /app/shared-data/audio-checkpoints
 
 # Открытие порта
 EXPOSE 8000

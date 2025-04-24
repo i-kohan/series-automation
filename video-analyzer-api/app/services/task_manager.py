@@ -13,6 +13,7 @@ _task_status = {}
 _task_lock = threading.Lock()
 _RESULTS_DIR = "/app/shared-data/results"
 _SCENES_WITH_AUDIO_DIR = "/app/shared-data/scenes-with-audio"
+_AUDIO_CHECKPOINTS_DIR = "/app/shared-data/audio-checkpoints"
 
 def init_task_status_from_files():
     """
@@ -20,9 +21,10 @@ def init_task_status_from_files():
     Вызывается при запуске сервера.
     """
     try:
-        # Создаем каталог для результатов, если он не существует
+        # Создаем каталоги для результатов, если они не существуют
         os.makedirs(_RESULTS_DIR, exist_ok=True)
         os.makedirs(_SCENES_WITH_AUDIO_DIR, exist_ok=True)
+        os.makedirs(_AUDIO_CHECKPOINTS_DIR, exist_ok=True)
         
         # Ищем все JSON файлы в каталоге результатов
         result_files = glob.glob(os.path.join(_RESULTS_DIR, "*.json"))
@@ -143,4 +145,71 @@ def save_scenes_with_audio(task_id: str, scenes_with_audio: List[Dict[str, Any]]
         logger.info(f"Scenes with audio analysis for task {task_id} saved to {output_path}")
         
     except Exception as e:
-        logger.error(f"Ошибка при сохранении аудио-анализа сцен для задачи {task_id}: {str(e)}") 
+        logger.error(f"Ошибка при сохранении аудио-анализа сцен для задачи {task_id}: {str(e)}")
+
+def save_audio_checkpoint(task_id: str, scene_id: str, audio_result: Dict[str, Any]) -> None:
+    """
+    Сохраняет результат анализа аудио для одной сцены
+    
+    Args:
+        task_id: Идентификатор задачи
+        scene_id: Идентификатор сцены
+        audio_result: Результат анализа аудио
+    """
+    try:
+        # Создаем директорию, если она не существует
+        os.makedirs(_AUDIO_CHECKPOINTS_DIR, exist_ok=True)
+        
+        # Формируем имя файла чекпоинта
+        filename = f"{task_id}_{scene_id}.json"
+        filepath = os.path.join(_AUDIO_CHECKPOINTS_DIR, filename)
+        
+        # Добавляем метаданные к результату
+        result_with_meta = audio_result.copy()
+        result_with_meta['_meta'] = {
+            'task_id': task_id,
+            'scene_id': scene_id,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Сохраняем чекпоинт
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(result_with_meta, f, ensure_ascii=False, indent=2)
+            
+        logger.info(f"Saved audio analysis checkpoint to {filepath}")
+    except Exception as e:
+        logger.error(f"Error saving audio checkpoint for task_id={task_id}, scene_id={scene_id}: {str(e)}")
+
+def load_audio_checkpoint(task_id: str, scene_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Загружает сохраненный результат анализа аудио для сцены, если он существует
+    
+    Args:
+        task_id: Идентификатор задачи
+        scene_id: Идентификатор сцены
+        
+    Returns:
+        Результат анализа аудио или None, если чекпоинт не найден
+    """
+    try:
+        # Формируем имя файла чекпоинта
+        filename = f"{task_id}_{scene_id}.json"
+        filepath = os.path.join(_AUDIO_CHECKPOINTS_DIR, filename)
+        
+        # Проверяем существование файла
+        if not os.path.exists(filepath):
+            return None
+        
+        # Загружаем чекпоинт
+        with open(filepath, 'r', encoding='utf-8') as f:
+            checkpoint = json.load(f)
+        
+        # Удаляем метаданные перед возвратом
+        if '_meta' in checkpoint:
+            del checkpoint['_meta']
+            
+        logger.info(f"Loaded audio checkpoint for task_id={task_id}, scene_id={scene_id}")
+        return checkpoint
+    except Exception as e:
+        logger.error(f"Error loading audio checkpoint for task_id={task_id}, scene_id={scene_id}: {str(e)}")
+        return None 

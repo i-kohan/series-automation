@@ -153,12 +153,17 @@ class AnalysisPipeline:
             status_updater(task_id, "processing", f"Анализ аудио сцены {i+1}/{total_scenes}...", scene_progress)
             
             try:
+                # Генерируем scene_id для чекпоинта и загрузки
+                scene_id = f"scene_{i+1}"
+                
                 # Анализируем аудио сцены
                 logger.info(f"Analyzing audio for scene: {scene['start_time']:.2f}s - {scene['end_time']:.2f}s")
                 scene_audio_input = {
                     'video_path': video_path,
                     'start_time': scene['start_time'],
-                    'end_time': scene['end_time']
+                    'end_time': scene['end_time'],
+                    'task_id': task_id,
+                    'scene_id': scene_id
                 }
                 
                 scene_audio_result = self.audio_analyzer.analyze(scene_audio_input)
@@ -166,10 +171,12 @@ class AnalysisPipeline:
                 # Добавляем результаты аудио-анализа к сцене
                 scene_with_audio = scene.copy()
                 scene_with_audio['audio_analysis'] = scene_audio_result
+                scene_with_audio['id'] = scene_id  # Добавляем ID сцены для будущих ссылок
                 scenes_with_audio.append(scene_with_audio)
             except Exception as e:
                 logger.error(f"Error analyzing audio for scene {i+1}: {str(e)}")
                 # Добавляем сцену без аудио-анализа
+                scene['id'] = f"scene_{i+1}"  # Всё равно добавляем ID
                 scenes_with_audio.append(scene)
         
         return scenes_with_audio

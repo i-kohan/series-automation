@@ -7,8 +7,10 @@ import librosa
 import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 from moviepy.editor import VideoFileClip
+from datetime import datetime
 
 from app.services.base_analyzer import BaseAnalyzer
+from app.services.task_manager import save_audio_checkpoint, load_audio_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,8 @@ class AudioAnalyzer(BaseAnalyzer):
                 - video_path: Путь к видеофайлу
                 - start_time: Начальное время сцены (в секундах)
                 - end_time: Конечное время сцены (в секундах)
+                - task_id: Опционально, ID задачи для сохранения чекпоинтов
+                - scene_id: Опционально, ID сцены для сохранения чекпоинтов
             **kwargs: Дополнительные параметры
             
         Returns:
@@ -59,10 +63,19 @@ class AudioAnalyzer(BaseAnalyzer):
         video_path = data.get('video_path')
         start_time = data.get('start_time')
         end_time = data.get('end_time')
+        task_id = data.get('task_id')
+        scene_id = data.get('scene_id')
         
         # Проверяем наличие всех необходимых параметров
         if not self._validate_input_parameters(video_path, start_time, end_time):
             return self._create_empty_result()
+        
+        # Проверяем наличие сохраненного чекпоинта для этой сцены через task_manager
+        if task_id and scene_id:
+            checkpoint = load_audio_checkpoint(task_id, scene_id)
+            if checkpoint:
+                logger.info(f"Loaded audio checkpoint for task_id={task_id}, scene_id={scene_id}")
+                return checkpoint
         
         # Логируем информацию о начале анализа
         duration = end_time - start_time
@@ -78,20 +91,29 @@ class AudioAnalyzer(BaseAnalyzer):
                 return self._create_empty_result()
             
             # Анализируем извлечённый аудио сегмент
-            return self._analyze_audio_segment(audio_data, sr)
+            result = self._analyze_audio_segment(audio_data, sr)
+            
+            # Сохраняем результат в чекпоинт через task_manager, если указаны task_id и scene_id
+            if task_id and scene_id:
+                save_audio_checkpoint(task_id, scene_id, result)
+                
+            return result
             
         except Exception as e:
             logger.error(f"Error during audio analysis: {str(e)}")
             return self._create_empty_result()
     
-    def analyze_scene_audio(self, video_path: str, start_time: float, end_time: float) -> Dict[str, Any]:
+    def analyze_scene_audio(self, video_path: str, start_time: float, end_time: float, 
+                           task_id: Optional[str] = None, scene_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Удобный метод для анализа аудио сцены (обертка над analyze)
         """
         return self.analyze({
             'video_path': video_path,
             'start_time': start_time,
-            'end_time': end_time
+            'end_time': end_time,
+            'task_id': task_id,
+            'scene_id': scene_id
         })
     
     def _validate_input_parameters(self, video_path: str, start_time: Optional[float], 

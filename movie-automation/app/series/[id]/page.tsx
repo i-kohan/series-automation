@@ -9,6 +9,8 @@ import { toast } from 'sonner';
 import { Loader2, ArrowLeft, Trash2 } from 'lucide-react';
 import { VideoSelector } from "@/components/VideoSelector";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { CharacterList } from '@/components/CharacterList';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function SeriesPage() {
   const params = useParams();
@@ -18,10 +20,22 @@ export default function SeriesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const seriesId = params.id as string;
+  const [key, setKey] = useState(0);
 
   useEffect(() => {
     loadSeries();
   }, [seriesId]);
+
+  useEffect(() => {
+    const handleRouteChange = () => {
+      setKey(prev => prev + 1);
+    };
+
+    window.addEventListener('focus', handleRouteChange);
+    return () => {
+      window.removeEventListener('focus', handleRouteChange);
+    };
+  }, []);
 
   const loadSeries = async () => {
     try {
@@ -125,8 +139,21 @@ export default function SeriesPage() {
           </CardContent>
         </Card>
 
-        <h2 className="text-xl font-bold mb-4">Выбор видео</h2>
-        <VideoSelector />
+        <Tabs defaultValue="characters" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="characters">Персонажи</TabsTrigger>
+            <TabsTrigger value="videos">Видео</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="characters">
+            <CharacterList key={`characters-${key}`} seriesId={seriesId} />
+          </TabsContent>
+          
+          <TabsContent value="videos">
+            <h2 className="text-xl font-bold mb-4">Выбор видео</h2>
+            <VideoSelector />
+          </TabsContent>
+        </Tabs>
       </main>
 
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

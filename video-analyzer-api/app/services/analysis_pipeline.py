@@ -19,20 +19,11 @@ class AnalysisPipeline:
     Последовательно выполняет анализаторы и объединяет их результаты.
     """
     
-    def __init__(self, model_size: str = "small", language: Optional[str] = None):
-        """
-        Инициализация пайплайна анализа с конфигурируемыми анализаторами
-        
-        Args:
-            model_size: Размер модели Whisper для аудиоанализа
-            language: Язык для модели Whisper (опционально)
-        """
-        logger.info(f"Initializing AnalysisPipeline with model_size={model_size}, language={language}")
-        
+    def __init__(self):
         # Инициализируем компоненты анализа
         self.metadata_extractor = VideoMetadataExtractor()
         self.scene_detector = SceneDetector()
-        self.audio_analyzer = AudioAnalyzer(model_size=model_size, language=language)
+        self.audio_analyzer = AudioAnalyzer()
         self.storyline_grouper = StorylineGrouper()
         
         logger.info("Initialized AnalysisPipeline with default analyzers")
@@ -69,11 +60,6 @@ class AnalysisPipeline:
                 status_updater(task_id, "error", "Не удалось обнаружить сцены в видео", 0.2)
                 return {}
             
-            # Можно закомментировать или удалить следующие 3 строки, когда нужен полный анализ
-            # if len(scenes) > 50:
-            #     scenes = scenes[:50]
-            #     logger.info(f"ВНИМАНИЕ: Анализ ограничен первыми 10 сценами из {len(scenes)} доступных (временный хардкод)")
-                
             scenes_with_audio = self._analyze_scenes_audio(video_path, scenes, task_id, status_updater)
             
             # Сохраняем результаты анализа аудио сцен с помощью task_manager

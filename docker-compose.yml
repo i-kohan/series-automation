@@ -6,6 +6,8 @@ services:
       context: ./video-analyzer-api
     ports:
       - "8000:8000"
+    env_file:
+      - ./video-analyzer-api/.env
     volumes:
       - ./shared-data:/app/shared-data
       - ./video-analyzer-api/app:/app/app

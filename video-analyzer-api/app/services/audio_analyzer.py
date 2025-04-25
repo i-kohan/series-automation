@@ -19,30 +19,29 @@ class AudioAnalyzer(BaseAnalyzer):
     Анализатор аудиодорожки видео, оптимизированный для русского языка.
     """
     
-    def __init__(self, model_size: str = "large-v3", language: Optional[str] = "ru"):
-        """
-        Инициализация моделей для анализа аудио с оптимизацией для русского языка
+    def __init__(self):
+        # Получаем настройки из переменных окружения
+        self.model_size = os.getenv("WHISPER_MODEL_SIZE", "small")
+        self.language = os.getenv("WHISPER_LANGUAGE", "ru")
         
-        Args:
-            model_size: Размер модели Whisper ("tiny", "base", "small", "medium", "large", "large-v3")
-            language: Язык для Whisper модели (по умолчанию "ru" для русского)
-        """
-        logger.info(f"Initializing Russian-optimized AudioAnalyzer with model_size={model_size}, language={language}...")
-        self.model_size = model_size
-        self.language = language
-        
+        # Определяем устройство и тип вычислений
+        self.device = os.getenv("WHISPER_DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
+        self.compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "float16" if self.device == "cuda" else "int8")
+
+        # Инициализируем модель Whisper
+        logger.info(f"Initializing Whisper model: size={self.model_size}, device={self.device}, compute_type={self.compute_type}")
         try:
-            # Используем GPU, если доступен, иначе CPU с INT8 квантизацией
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            compute_type = "float16" if device == "cuda" else "int8"
-            
-            logger.info(f"Using device: {device} with compute_type: {compute_type}")
-            self.whisper_model = WhisperModel(model_size, device=device, compute_type=compute_type)
-            logger.info(f"Faster Whisper model '{model_size}' loaded successfully")
+            self.model = WhisperModel(
+                self.model_size,
+                device=self.device,
+                compute_type=self.compute_type,
+                download_root='/root/.cache/huggingface'
+            )
+            logger.info(f"Whisper model '{self.model_size}' loaded successfully on {self.device}")
         except Exception as e:
-            logger.error(f"Error loading Faster Whisper model: {str(e)}")
-            self.whisper_model = None
-    
+            logger.error(f"Error loading Whisper model: {str(e)}")
+            self.model = None
+
     def analyze(self, data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """
         Анализирует аудио для конкретной сцены видео
@@ -173,7 +172,7 @@ class AudioAnalyzer(BaseAnalyzer):
     
     def _transcribe_audio(self, audio_data: np.ndarray, sr: int) -> Dict[str, Any]:
         """Транскрибирует аудио в текст используя модель Faster Whisper с оптимизацией для русского языка"""
-        if self.whisper_model is None:
+        if self.model is None:
             return {"transcript": None, "language": None, "segments": []}
         
         try:
@@ -188,7 +187,7 @@ class AudioAnalyzer(BaseAnalyzer):
                 vad_filter = True  # Фильтрация тишины
                 
                 # Выполняем транскрипцию с русским языком
-                segments, info = self.whisper_model.transcribe(
+                segments, info = self.model.transcribe(
                     temp_file.name,
                     language=self.language,  # Указываем русский язык
                     beam_size=beam_size,

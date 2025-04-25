@@ -20,12 +20,8 @@ logger = logging.getLogger(__name__)
 os.makedirs("/app/shared-data/sample-videos", exist_ok=True)
 os.makedirs("/app/shared-data/results", exist_ok=True)
 
-# Настройки для анализатора
-MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "large-v3")
-LANGUAGE = os.environ.get("WHISPER_LANGUAGE", "ru")
-
 # Создаем экземпляр пайплайна анализа
-analysis_pipeline = AnalysisPipeline(model_size=MODEL_SIZE, language=LANGUAGE)
+analysis_pipeline = AnalysisPipeline()
 
 app = FastAPI(
     title="Video Analyzer API",
@@ -151,14 +147,8 @@ def run_analysis_pipeline(video_path: str, task_id: str, num_storylines: int = 3
         language: Язык для транскрипции (если указан)
     """
     try:
-        # Создаем специализированный экземпляр пайплайна, если указан язык
-        pipeline = analysis_pipeline
-        if language and language != LANGUAGE:
-            pipeline = AnalysisPipeline(model_size=MODEL_SIZE, language=language)
-            logger.info(f"Created specialized pipeline for language: {language}")
-        
         # Запускаем анализ через AnalysisPipeline
-        result = pipeline.analyze(
+        result = analysis_pipeline.analyze(
             video_path=video_path,
             task_id=task_id,
             status_updater=set_task_status,

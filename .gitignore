@@ -2,3 +2,4 @@
 __pycache__/
 *.pyc
 shared-data
+video-analyzer-api/.env

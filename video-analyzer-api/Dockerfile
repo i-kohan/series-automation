@@ -26,8 +26,14 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # Создание директорий для моделей и кэша
 RUN mkdir -p /root/.cache/torch/pyannote /root/.cache/huggingface
 
+# Установка переменных окружения по умолчанию
+ENV WHISPER_MODEL_SIZE=large-v3
+ENV WHISPER_LANGUAGE=ru
+ENV WHISPER_DEVICE=cuda
+ENV WHISPER_COMPUTE_TYPE=float16
+
 # Предварительная загрузка модели и ее кэширование
-RUN python3 -c "from faster_whisper import WhisperModel; WhisperModel('large-v3', device='cuda' if __import__('torch').cuda.is_available() else 'cpu', compute_type='float16' if __import__('torch').cuda.is_available() else 'int8', download_root='/root/.cache/huggingface')"
+RUN python3 -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL_SIZE}', device='${WHISPER_DEVICE}', compute_type='${WHISPER_COMPUTE_TYPE}', download_root='/root/.cache/huggingface')"
 
 # Копирование приложения
 COPY . .

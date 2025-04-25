@@ -10,6 +10,7 @@ import { Loader2, ArrowLeft, Trash2 } from 'lucide-react';
 import { VideoSelector } from "@/components/VideoSelector";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { CharacterList } from '@/components/CharacterList';
+import { EpisodeList } from '@/components/EpisodeList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function SeriesPage() {
@@ -142,11 +143,16 @@ export default function SeriesPage() {
         <Tabs defaultValue="characters" className="space-y-6">
           <TabsList>
             <TabsTrigger value="characters">Персонажи</TabsTrigger>
+            <TabsTrigger value="episodes">Серии</TabsTrigger>
             <TabsTrigger value="videos">Видео</TabsTrigger>
           </TabsList>
           
           <TabsContent value="characters">
             <CharacterList key={`characters-${key}`} seriesId={seriesId} />
+          </TabsContent>
+          
+          <TabsContent value="episodes">
+            <EpisodeList key={`episodes-${key}`} seriesId={seriesId} />
           </TabsContent>
           
           <TabsContent value="videos">

@@ -1,25 +1,34 @@
 import { Series, CreateSeriesDto, UpdateSeriesDto } from '../types/series';
 import { seriesRepository } from '../repositories/seriesRepository';
+import { characterService } from './characterService';
+import { episodeService } from './episodeService';
 
-export class SeriesService {
+class SeriesService {
     async getAllSeries(): Promise<Series[]> {
-        return seriesRepository.findAll();
+        return await seriesRepository.findAll();
     }
 
     async getSeriesById(id: string): Promise<Series | null> {
-        return seriesRepository.findById(id);
+        return await seriesRepository.findById(id);
     }
 
     async createSeries(dto: CreateSeriesDto): Promise<Series> {
-        return seriesRepository.create(dto);
+        return await seriesRepository.create(dto);
     }
 
     async updateSeries(id: string, dto: UpdateSeriesDto): Promise<Series | null> {
-        return seriesRepository.update(id, dto);
+        return await seriesRepository.update(id, dto);
     }
 
     async deleteSeries(id: string): Promise<boolean> {
-        return seriesRepository.delete(id);
+        // Удаляем все персонажи, связанные с этим сериалом
+        await characterService.deleteCharactersBySeriesId(id);
+        
+        // Удаляем все серии, связанные с этим сериалом
+        await episodeService.deleteEpisodesBySeriesId(id);
+        
+        // Удаляем сам сериал
+        return await seriesRepository.delete(id);
     }
 }
 

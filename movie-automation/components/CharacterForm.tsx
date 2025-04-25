@@ -10,6 +10,16 @@ import { toast } from 'sonner';
 import { Loader2, Copy, CheckCircle2, Plus, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
+// Интерфейс для JSON-ответа от ChatGPT
+interface CharacterGptResponse {
+  name: string;
+  aliases: string[];
+  description: string;
+  keywords: string[];
+  quotes?: string[];
+  imageUrls: string[];
+}
+
 interface CharacterFormProps {
   seriesId: string;
   character?: Character;
@@ -30,6 +40,8 @@ export function CharacterForm({ seriesId, character, onSuccess }: CharacterFormP
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [promptCopied, setPromptCopied] = useState(false);
   const [seriesTitle, setSeriesTitle] = useState<string>('');
+  const [chatGptResponse, setChatGptResponse] = useState<string>('');
+  const [parsingError, setParsingError] = useState<string | null>(null);
   const isEditing = !!character;
 
   useEffect(() => {
@@ -47,18 +59,24 @@ export function CharacterForm({ seriesId, character, onSuccess }: CharacterFormP
     fetchSeriesTitle();
   }, [seriesId]);
 
-  const characterPrompt = `Помоги мне собрать информацию о персонаже "${name || '[ИМЯ ПЕРСОНАЖА]'}" из сериала "${seriesTitle || '[НАЗВАНИЕ СЕРИАЛА]'}". Пожалуйста, предоставь следующие данные:
+  const characterPrompt = `Помоги мне собрать информацию о персонаже "${name || '[ИМЯ ПЕРСОНАЖА]'}" из сериала "${seriesTitle || '[НАЗВАНИЕ СЕРИАЛА]'}".
 
-1. Полное имя персонажа
-2. Псевдонимы и альтернативные имена (через запятую)
-3. Краткое описание персонажа (2-3 предложения)
-4. Ключевые слова, характеризующие персонажа (черты характера, привычки, особенности речи - через запятую)
-5. Характерные фразы или цитаты персонажа (3-5 примеров)
-6. Прямые ссылки на изображения персонажа (2-3 ссылки на качественные изображения, заканчивающиеся на .jpg, .png или .webp)
+Предоставь ответ в формате JSON по следующей структуре:
 
-ВАЖНО: Для пункта 6 предоставь только прямые ссылки на изображения, которые можно использовать в теге <img src="...">. Убедись, что это не ссылки на страницы сайтов, а прямые URL-адреса к файлам изображений.
+\`\`\`json
+{
+  "name": "Полное имя персонажа",
+  "aliases": ["Псевдоним 1", "Псевдоним 2"],
+  "description": "Краткое описание персонажа (2-3 предложения)",
+  "keywords": ["черта характера 1", "особенность 2", "привычка 3"],
+  "quotes": ["Характерная фраза 1", "Цитата 2", "Фраза 3"],
+  "imageUrls": ["https://example.com/image1.jpg", "https://example.com/image2.jpg"]
+}
+\`\`\`
 
-Пожалуйста, представь информацию в формате, удобном для копирования в соответствующие поля.`;
+ВАЖНО для поля imageUrls: предоставь только прямые ссылки на изображения (заканчивающиеся на .jpg, .png или .webp), которые можно использовать в теге <img src="...">. Убедись, что это не ссылки на страницы сайтов, а прямые URL-адреса к файлам изображений.
+
+Возврати только валидный JSON без дополнительного текста.`;
 
   const getFormattedPrompt = () => {
     const namePart = name 
@@ -69,18 +87,24 @@ export function CharacterForm({ seriesId, character, onSuccess }: CharacterFormP
       ? `<span class="font-semibold">"${seriesTitle}"</span>` 
       : '<span class="italic text-muted-foreground">[НАЗВАНИЕ СЕРИАЛА]</span>';
     
-    return `Помоги мне собрать информацию о персонаже ${namePart} из сериала ${seriesPart}. Пожалуйста, предоставь следующие данные:
+    return `Помоги мне собрать информацию о персонаже ${namePart} из сериала ${seriesPart}.
 
-1. Полное имя персонажа
-2. Псевдонимы и альтернативные имена (через запятую)
-3. Краткое описание персонажа (2-3 предложения)
-4. Ключевые слова, характеризующие персонажа (черты характера, привычки, особенности речи - через запятую)
-5. Характерные фразы или цитаты персонажа (3-5 примеров)
-6. <span class="font-bold">Прямые ссылки</span> на изображения персонажа (2-3 ссылки на качественные изображения, заканчивающиеся на .jpg, .png или .webp)
+Предоставь ответ в формате JSON по следующей структуре:
 
-<span class="text-amber-500 font-semibold">ВАЖНО:</span> Для пункта 6 предоставь только прямые ссылки на изображения, которые можно использовать в теге &lt;img src="..."&gt;. Убедись, что это не ссылки на страницы сайтов, а прямые URL-адреса к файлам изображений.
+<pre class="p-2 bg-black/5 rounded-md">
+{
+  "name": "Полное имя персонажа",
+  "aliases": ["Псевдоним 1", "Псевдоним 2"],
+  "description": "Краткое описание персонажа (2-3 предложения)",
+  "keywords": ["черта характера 1", "особенность 2", "привычка 3"],
+  "quotes": ["Характерная фраза 1", "Цитата 2", "Фраза 3"],
+  "imageUrls": ["https://example.com/image1.jpg", "https://example.com/image2.jpg"]
+}
+</pre>
 
-Пожалуйста, представь информацию в формате, удобном для копирования в соответствующие поля.`;
+<span class="text-amber-500 font-semibold">ВАЖНО для поля imageUrls:</span> предоставь только прямые ссылки на изображения (заканчивающиеся на .jpg, .png или .webp), которые можно использовать в теге &lt;img src="..."&gt;. Убедись, что это не ссылки на страницы сайтов, а прямые URL-адреса к файлам изображений.
+
+Возврати только валидный JSON без дополнительного текста.`;
   };
 
   const handleCopyPrompt = () => {
@@ -89,6 +113,54 @@ export function CharacterForm({ seriesId, character, onSuccess }: CharacterFormP
     setPromptCopied(true);
     setTimeout(() => setPromptCopied(false), 2000);
     toast.success('Промпт скопирован');
+  };
+
+  // Функция для парсинга JSON-ответа от ChatGPT
+  const handleParseResponse = () => {
+    try {
+      // Попытка найти и извлечь JSON из ответа
+      let jsonText = chatGptResponse;
+      
+      // Если текст содержит блоки кода, извлекаем JSON из первого блока
+      const codeBlockMatch = chatGptResponse.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (codeBlockMatch && codeBlockMatch[1]) {
+        jsonText = codeBlockMatch[1].trim();
+      }
+      
+      const parsedData = JSON.parse(jsonText) as CharacterGptResponse;
+      setParsingError(null);
+      
+      // Заполняем форму данными из JSON
+      if (parsedData.name) {
+        setName(parsedData.name);
+      }
+      
+      if (parsedData.aliases && Array.isArray(parsedData.aliases)) {
+        setAliases(parsedData.aliases.join(', '));
+      }
+      
+      if (parsedData.description) {
+        setDescription(parsedData.description);
+      }
+      
+      if (parsedData.keywords && Array.isArray(parsedData.keywords)) {
+        setKeywords(parsedData.keywords.join(', '));
+      }
+      
+      if (parsedData.imageUrls && Array.isArray(parsedData.imageUrls)) {
+        // Фильтруем только валидные URL изображений
+        const validImageUrls = parsedData.imageUrls.filter(url => 
+          url.match(/^https?:\/\/.*\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i)
+        );
+        setImageUrls(validImageUrls);
+      }
+      
+      toast.success('JSON успешно обработан и заполнены поля формы');
+    } catch (error) {
+      console.error('Ошибка парсинга JSON:', error);
+      setParsingError('Не удалось разобрать JSON-ответ. Проверьте формат ответа от ChatGPT.');
+      toast.error('Ошибка при обработке ответа ChatGPT');
+    }
   };
 
   const handleAddImageUrl = () => {
@@ -213,6 +285,35 @@ export function CharacterForm({ seriesId, character, onSuccess }: CharacterFormP
                 </div>
               </div>
             </div>
+          </CardContent>
+        </Card>
+        
+        {/* Обработка ответа ChatGPT */}
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <h3 className="text-lg font-medium mb-2">Обработка ответа ChatGPT</h3>
+            <div className="space-y-2">
+              <Label htmlFor="chatgpt-response">Вставьте ответ от ChatGPT</Label>
+              <Textarea
+                id="chatgpt-response"
+                placeholder="Вставьте сюда весь ответ от ChatGPT в формате JSON..."
+                value={chatGptResponse}
+                onChange={(e) => setChatGptResponse(e.target.value)}
+                rows={8}
+                className="font-mono text-sm"
+              />
+              {parsingError && (
+                <p className="text-sm text-red-500">{parsingError}</p>
+              )}
+            </div>
+            <Button 
+              type="button" 
+              onClick={handleParseResponse}
+              disabled={!chatGptResponse.trim()}
+              className="w-full"
+            >
+              Обработать и заполнить форму
+            </Button>
           </CardContent>
         </Card>
 

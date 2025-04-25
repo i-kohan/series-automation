@@ -103,24 +103,40 @@ export function CharacterList({ seriesId }: CharacterListProps) {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold">Персонажи</h2>
-        <Button asChild>
-          <Link href={`/series/${seriesId}/characters/new`}>
-            <UserPlus className="h-4 w-4 mr-2" />
-            Добавить персонажа
-          </Link>
-        </Button>
+        <div className="flex space-x-2">
+          <Button variant="outline" asChild>
+            <Link href={`/series/${seriesId}/characters/batch`}>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Создать массово
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href={`/series/${seriesId}/characters/new`}>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Добавить персонажа
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {characters.length === 0 ? (
         <Card className="p-8">
           <div className="text-center">
             <p className="text-muted-foreground mb-4">У этого сериала пока нет персонажей</p>
-            <Button asChild>
-              <Link href={`/series/${seriesId}/characters/new`}>
-                <UserPlus className="h-4 w-4 mr-2" />
-                Добавить первого персонажа
-              </Link>
-            </Button>
+            <div className="flex justify-center space-x-2">
+              <Button variant="outline" asChild>
+                <Link href={`/series/${seriesId}/characters/batch`}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Создать массово
+                </Link>
+              </Button>
+              <Button asChild>
+                <Link href={`/series/${seriesId}/characters/new`}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Добавить персонажа
+                </Link>
+              </Button>
+            </div>
           </div>
         </Card>
       ) : (

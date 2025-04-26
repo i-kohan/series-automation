@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { EpisodeForm } from '@/components/EpisodeForm';
+import { EpisodeForm } from '@/components/episode-form/EpisodeForm';
 import { Episode } from '@/lib/types/episode';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Loader2 } from 'lucide-react';

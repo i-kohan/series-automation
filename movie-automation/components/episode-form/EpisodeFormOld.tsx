@@ -9,8 +9,24 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { Loader2, Plus, X, Copy, CheckCircle2 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Loader2, Plus, X, Copy, CheckCircle2, Check, AlertTriangle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from "@/components/ui/table";
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select";
+import { CreateNewCharactersDialog } from '@/components/CreateNewCharactersDialog';
 
 // Интерфейс для JSON-ответа от ChatGPT
 interface ChatGptResponse {
@@ -24,6 +40,15 @@ interface ChatGptResponse {
     keywords: string[];
     emotions: string[];
   }[];
+}
+
+// Структура для сопоставления персонажей
+interface CharacterMatch {
+  name: string; // Имя персонажа из ChatGPT
+  existingCharacter: Character | null; // Найденный существующий персонаж
+  matchScore: number; // Оценка совпадения (0-1)
+  status: 'matched' | 'unmatched' | 'manual' | 'skipped'; // Статус сопоставления
+  selectedCharacterId?: string; // ID выбранного вручную персонажа
 }
 
 interface EpisodeFormProps {
@@ -49,6 +74,12 @@ export function EpisodeForm({ seriesId, episode, onSuccess }: EpisodeFormProps) 
   const [parsingError, setParsingError] = useState<string | null>(null);
   const isEditing = !!episode;
 
+  // Новые состояния для сопоставления персонажей
+  const [characterMatches, setCharacterMatches] = useState<CharacterMatch[]>([]);
+  const [showCharacterMatching, setShowCharacterMatching] = useState(false);
+  const [parsedCharacters, setParsedCharacters] = useState<string[]>([]);
+  const [rawPlotLinesFromChatGpt, setRawPlotLinesFromChatGpt] = useState<ChatGptResponse['plotLines']>([]);
+
   // Загрузка персонажей для выбора
   useEffect(() => {
     const fetchData = async () => {
@@ -72,6 +103,19 @@ export function EpisodeForm({ seriesId, episode, onSuccess }: EpisodeFormProps) 
 
     fetchData();
   }, [seriesId]);
+
+  // Обработчик для создания новых персонажей
+  const handleCharactersCreated = (createdCharacters: Character[]) => {
+    // Добавляем новых персонажей в список существующих
+    setCharacters(prev => [...prev, ...createdCharacters]);
+    
+    // Повторно выполняем сопоставление с сохраненными персонажами из ChatGPT
+    if (parsedCharacters.length > 0) {
+      matchCharacters(parsedCharacters);
+    }
+    
+    toast.success(`Добавлено ${createdCharacters.length} новых персонажей`);
+  };
 
   // Промпт для ChatGPT
   const getPrompt = () => {
@@ -205,63 +249,221 @@ ${descriptions.map((desc, i) => desc ? `${i+1}. ${desc}` : '').filter(Boolean).j
         setKeywords(parsedData.keywords.join(', '));
       }
       
-      // Персонажи
+      // Сохраняем исходные данные для дальнейшей обработки
       if (parsedData.characters && Array.isArray(parsedData.characters)) {
-        // Находим ID персонажей по именам
-        const selectedIds: string[] = [];
-        parsedData.characters.forEach(charName => {
-          const foundChar = characters.find(
-            c => c.name.toLowerCase() === charName.toLowerCase() || 
-                 (c.aliases && c.aliases.some(alias => alias.toLowerCase() === charName.toLowerCase()))
-          );
-          if (foundChar) {
-            selectedIds.push(foundChar.id);
-          }
-        });
-        setSelectedCharacters(selectedIds);
-      }
-      
-      // Сюжетные линии
-      if (parsedData.plotLines && Array.isArray(parsedData.plotLines)) {
-        const newPlotLines: (Omit<PlotLine, "id"> & { id?: string })[] = parsedData.plotLines.map(pl => {
-          // Для каждой сюжетной линии находим ID персонажей
-          const plotLineCharIds: string[] = [];
-          if (pl.characters && Array.isArray(pl.characters)) {
-            pl.characters.forEach(charName => {
-              const foundChar = characters.find(
-                c => c.name.toLowerCase() === charName.toLowerCase() || 
-                     (c.aliases && c.aliases.some(alias => alias.toLowerCase() === charName.toLowerCase()))
-              );
-              if (foundChar) {
-                plotLineCharIds.push(foundChar.id);
-              }
-            });
-          }
-          
-          // Объединяем сцены в одно описание, если они есть
-          let description = pl.description || '';
-          if (pl.scenes && Array.isArray(pl.scenes) && pl.scenes.length > 0) {
-            description += '\n\n' + pl.scenes.join('\n\n');
-          }
-          
-          return {
-            id: undefined, // Для новых сюжетных линий ID будет присвоен сервером
-            title: pl.title || '',
-            description: description.trim(),
-            characters: plotLineCharIds,
-            keywords: pl.keywords || []
-          };
-        });
+        // Сохраняем персонажей для последующего использования
+        setParsedCharacters(parsedData.characters);
         
-        setPlotLines(newPlotLines);
+        // Выполняем сопоставление персонажей
+        matchCharacters(parsedData.characters);
       }
       
-      toast.success('JSON успешно обработан и заполнены поля формы');
+      if (parsedData.plotLines && Array.isArray(parsedData.plotLines)) {
+        setRawPlotLinesFromChatGpt(parsedData.plotLines);
+      }
+      
+      toast.success('JSON успешно обработан');
     } catch (error) {
       console.error('Ошибка парсинга JSON:', error);
       setParsingError('Не удалось разобрать JSON-ответ. Проверьте формат ответа от ChatGPT.');
       toast.error('Ошибка при обработке ответа ChatGPT');
     }
+  };
+
+  // Функция для сопоставления персонажей
+  const matchCharacters = (gptCharacters: string[]) => {
+    if (gptCharacters.length === 0 || characters.length === 0) {
+      // Если нет персонажей для сопоставления или нет существующих персонажей,
+      // пропускаем этап сопоставления
+      applyMatchingResultsToPlotLines([]);
+      return;
+    }
+    
+    const matches: CharacterMatch[] = gptCharacters.map(charName => {
+      // Ищем потенциальные совпадения
+      const potentialMatches = characters.map(existingChar => {
+        const nameScore = calculateStringMatchScore(charName, existingChar.name);
+        
+        // Сравниваем с псевдонимами
+        let aliasScore = 0;
+        if (existingChar.aliases && existingChar.aliases.length > 0) {
+          for (const alias of existingChar.aliases) {
+            aliasScore = Math.max(aliasScore, calculateStringMatchScore(charName, alias));
+          }
+        }
+        
+        // Общий счет - максимум между именем и псевдонимами
+        const totalScore = Math.max(nameScore, aliasScore);
+        
+        return {
+          character: existingChar,
+          score: totalScore
+        };
+      });
+      
+      // Сортируем совпадения по убыванию счета
+      potentialMatches.sort((a, b) => b.score - a.score);
+      
+      // Если есть хорошее совпадение (более 80%), считаем его автоматическим совпадением
+      if (potentialMatches.length > 0 && potentialMatches[0].score >= 0.8) {
+        return {
+          name: charName,
+          existingCharacter: potentialMatches[0].character,
+          matchScore: potentialMatches[0].score,
+          status: 'matched' as const
+        };
+      }
+      
+      return {
+        name: charName,
+        existingCharacter: null,
+        matchScore: potentialMatches.length > 0 ? potentialMatches[0].score : 0,
+        status: 'unmatched' as const
+      };
+    });
+    
+    setCharacterMatches(matches);
+    
+    // Определяем, нужно ли показывать интерфейс сопоставления
+    const hasUnmatched = matches.some(match => match.status === 'unmatched');
+    setShowCharacterMatching(hasUnmatched);
+    
+    // Если все персонажи сопоставлены автоматически, сразу применяем результаты
+    if (!hasUnmatched) {
+      applyMatchingResultsToPlotLines(matches);
+    }
+  };
+  
+  // Функция для расчета степени сходства строк (0-1)
+  const calculateStringMatchScore = (str1: string, str2: string): number => {
+    if (!str1 || !str2) return 0;
+    
+    const s1 = str1.toLowerCase().trim();
+    const s2 = str2.toLowerCase().trim();
+    
+    // Точное совпадение
+    if (s1 === s2) return 1;
+    
+    // Одна строка содержит другую
+    if (s1.includes(s2) || s2.includes(s1)) {
+      const ratio = Math.min(s1.length, s2.length) / Math.max(s1.length, s2.length);
+      return 0.8 + (0.2 * ratio);
+    }
+    
+    // Простой алгоритм расстояния Левенштейна для частичного совпадения
+    const maxLen = Math.max(s1.length, s2.length);
+    if (maxLen === 0) return 1;
+    
+    let similarity = 0;
+    const minLen = Math.min(s1.length, s2.length);
+    
+    for (let i = 0; i < minLen; i++) {
+      if (s1[i] === s2[i]) similarity++;
+    }
+    
+    return similarity / maxLen;
+  };
+  
+  // Обработка выбора персонажа вручную
+  const handleManualMatch = (index: number, characterId: string) => {
+    setCharacterMatches(prev => {
+      const newMatches = [...prev];
+      const selectedCharacter = characters.find(c => c.id === characterId) || null;
+      
+      newMatches[index] = {
+        ...newMatches[index],
+        existingCharacter: selectedCharacter,
+        selectedCharacterId: characterId,
+        status: 'manual'
+      };
+      
+      return newMatches;
+    });
+  };
+  
+  // Пометка персонажа как пропущенного
+  const handleSkipCharacter = (index: number) => {
+    setCharacterMatches(prev => {
+      const newMatches = [...prev];
+      newMatches[index] = {
+        ...newMatches[index],
+        existingCharacter: null,
+        selectedCharacterId: undefined,
+        status: 'skipped'
+      };
+      return newMatches;
+    });
+  };
+  
+  // Сброс сопоставления
+  const handleResetMatch = (index: number) => {
+    setCharacterMatches(prev => {
+      const newMatches = [...prev];
+      newMatches[index] = {
+        ...newMatches[index],
+        existingCharacter: null,
+        selectedCharacterId: undefined,
+        status: 'unmatched'
+      };
+      return newMatches;
+    });
+  };
+  
+  // Применение результатов сопоставления
+  const handleApplyMatching = () => {
+    setShowCharacterMatching(false);
+    applyMatchingResultsToPlotLines(characterMatches);
+  };
+  
+  // Применение результатов сопоставления к сюжетным линиям
+  const applyMatchingResultsToPlotLines = (matches: CharacterMatch[]) => {
+    if (!rawPlotLinesFromChatGpt.length) return;
+    
+    // Создаем карту сопоставлений имя -> id
+    const characterMap = new Map<string, string>();
+    matches.forEach(match => {
+      if (match.existingCharacter && (match.status === 'matched' || match.status === 'manual')) {
+        characterMap.set(match.name.toLowerCase(), match.existingCharacter.id);
+      }
+    });
+    
+    // Подготавливаем новый список сопоставленных персонажей
+    const matchedCharacterIds = Array.from(new Set(
+      matches
+        .filter(m => m.existingCharacter && (m.status === 'matched' || m.status === 'manual'))
+        .map(m => m.existingCharacter!.id)
+    ));
+    setSelectedCharacters(matchedCharacterIds);
+    
+    // Обновляем сюжетные линии
+    const updatedPlotLines = rawPlotLinesFromChatGpt.map(pl => {
+      // Находим ID персонажей для этой сюжетной линии
+      const plotLineCharIds: string[] = [];
+      if (pl.characters && Array.isArray(pl.characters)) {
+        pl.characters.forEach(charName => {
+          const charId = characterMap.get(charName.toLowerCase());
+          if (charId) {
+            plotLineCharIds.push(charId);
+          }
+        });
+      }
+      
+      // Объединяем сцены в одно описание, если они есть
+      let description = pl.description || '';
+      if (pl.scenes && Array.isArray(pl.scenes) && pl.scenes.length > 0) {
+        description += '\n\n' + pl.scenes.join('\n\n');
+      }
+      
+      return {
+        id: undefined, // Для новых сюжетных линий ID будет присвоен сервером
+        title: pl.title || '',
+        description: description.trim(),
+        characters: plotLineCharIds,
+        keywords: pl.keywords || []
+      };
+    });
+    
+    setPlotLines(updatedPlotLines);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -472,6 +674,153 @@ ${descriptions.map((desc, i) => desc ? `${i+1}. ${desc}` : '').filter(Boolean).j
           </CardContent>
         </Card>
       </div>
+
+      {/* Интерфейс сопоставления персонажей */}
+      {showCharacterMatching && characterMatches.length > 0 && (
+        <div>
+          <h2 className="text-xl font-bold mb-4">Сопоставление персонажей</h2>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex justify-between items-center">
+                <span>Обнаружены новые персонажи</span>
+                <div className="flex gap-2">
+                  <CreateNewCharactersDialog 
+                    seriesId={seriesId}
+                    seriesTitle={seriesTitle}
+                    unmatchedCharacters={characterMatches}
+                    onSuccess={handleCharactersCreated}
+                  />
+                  <Button 
+                    onClick={handleApplyMatching}
+                    disabled={characterMatches.every(m => m.status === 'unmatched')}
+                  >
+                    Применить сопоставления
+                  </Button>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-4">
+                В ответе ChatGPT были упомянуты персонажи, которые требуют сопоставления с существующими.
+                Выберите соответствующего персонажа из списка или пропустите персонажа, если он не нужен.
+              </p>
+              
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Персонаж из ChatGPT</TableHead>
+                    <TableHead>Существующий персонаж</TableHead>
+                    <TableHead>Совпадение</TableHead>
+                    <TableHead>Статус</TableHead>
+                    <TableHead>Действия</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {characterMatches.map((match, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <div className="font-medium">{match.name}</div>
+                      </TableCell>
+                      <TableCell>
+                        {match.status === 'unmatched' ? (
+                          <Select 
+                            value={match.selectedCharacterId || ""}
+                            onValueChange={(value) => handleManualMatch(index, value)}
+                          >
+                            <SelectTrigger className="w-[200px]">
+                              <SelectValue placeholder="Выберите персонажа" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {characters.map(character => (
+                                <SelectItem key={character.id} value={character.id}>
+                                  {character.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : match.existingCharacter ? (
+                          <div className="font-medium">{match.existingCharacter.name}</div>
+                        ) : (
+                          <div className="text-muted-foreground">—</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {match.status === 'matched' || match.status === 'manual' ? (
+                          <div className="flex items-center">
+                            <span
+                              className={`inline-block w-16 h-2 rounded-full mr-2 ${
+                                match.matchScore > 0.8 ? 'bg-green-500' :
+                                match.matchScore > 0.5 ? 'bg-amber-500' : 'bg-red-500'
+                              }`}
+                            />
+                            <span>{Math.round(match.matchScore * 100)}%</span>
+                          </div>
+                        ) : (
+                          <div className="text-muted-foreground">—</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {match.status === 'matched' && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <Check className="w-3 h-3 mr-1" />
+                            Совпал
+                          </span>
+                        )}
+                        {match.status === 'manual' && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            <Check className="w-3 h-3 mr-1" />
+                            Выбран вручную
+                          </span>
+                        )}
+                        {match.status === 'unmatched' && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                            <AlertTriangle className="w-3 h-3 mr-1" />
+                            Не сопоставлен
+                          </span>
+                        )}
+                        {match.status === 'skipped' && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            Пропущен
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {match.status === 'unmatched' && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleSkipCharacter(index)}
+                          >
+                            Пропустить
+                          </Button>
+                        )}
+                        {(match.status === 'matched' || match.status === 'manual' || match.status === 'skipped') && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleResetMatch(index)}
+                          >
+                            Сбросить
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              
+              <div className="mt-4 flex justify-end">
+                <Button 
+                  onClick={handleApplyMatching}
+                  disabled={characterMatches.every(m => m.status === 'unmatched')}
+                >
+                  Применить сопоставления
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Ключевые слова */}
       <div>

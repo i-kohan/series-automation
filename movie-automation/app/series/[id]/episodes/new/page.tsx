@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { EpisodeForm } from '@/components/EpisodeForm';
+import { EpisodeForm } from '@/components/episode-form/EpisodeForm';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { Episode } from '@/lib/types/episode';

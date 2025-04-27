@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Any, Union, Float
+from typing import List, Dict, Optional, Any, Union
 
 class Character(BaseModel):
     """Модель для описания персонажа"""

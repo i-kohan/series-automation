@@ -8,6 +8,7 @@ from typing import List, Optional, Dict, Any
 
 from app.services.analysis_pipeline import AnalysisPipeline
 from app.services.task_manager import set_task_status, get_analysis_status, init_task_status_from_files, save_result
+from app.routers import episode_matcher, video_cutter
 
 # Настройка логирования
 logging.basicConfig(
@@ -16,9 +17,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Функция для определения корневой директории данных
+def get_data_root() -> str:
+    """
+    Возвращает корневую директорию для данных, учитывая разницу
+    между локальной разработкой и Docker окружением
+    """
+    # Проверяем, есть ли путь в Docker
+    docker_path = "/app/shared-data"
+    if os.path.exists(docker_path):
+        return docker_path
+    
+    # Возвращаем относительный путь для локальной разработки
+    return "../shared-data"
+
 # Создание директорий для хранения данных
-os.makedirs("/app/shared-data/sample-videos", exist_ok=True)
-os.makedirs("/app/shared-data/results", exist_ok=True)
+data_root = get_data_root()
+os.makedirs(os.path.join(data_root, "sample-videos"), exist_ok=True)
+os.makedirs(os.path.join(data_root, "results"), exist_ok=True)
 
 # Создаем экземпляр пайплайна анализа
 analysis_pipeline = AnalysisPipeline()
@@ -28,6 +44,10 @@ app = FastAPI(
     description="API для анализа видеофайлов и выделения сюжетных линий",
     version="0.1.0"
 )
+
+# Подключаем роутеры
+app.include_router(episode_matcher.router)
+app.include_router(video_cutter.router)
 
 # Настройка CORS для взаимодействия с фронтендом
 app.add_middleware(
@@ -61,7 +81,7 @@ class AnalysisStatusResponse(BaseModel):
 
 def get_video_directory() -> str:
     """Получает директорию с видеофайлами"""
-    return "/app/shared-data/sample-videos"
+    return os.path.join(get_data_root(), "sample-videos")
 
 @app.get("/")
 async def root():

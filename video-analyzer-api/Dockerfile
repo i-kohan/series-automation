@@ -37,8 +37,17 @@ RUN mkdir -p /root/.cache/torch/pyannote /root/.cache/huggingface
 # ENV ENABLE_KEYWORD_MATCHING=true
 # ENV MIN_SCENE_SCORE_THRESHOLD=0.2
 
+# # Переменные для настройки FrameAnalyzer
+# ENV VISION_MODEL_NAME=openai/clip-vit-base-patch32
+# ENV VISION_DEVICE=cpu
+# ENV VISION_COMPUTE_TYPE=float32
+# ENV FRAMES_PER_SCENE=3
+
 # Предварительная загрузка модели и ее кэширование
-RUN python3 -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL_SIZE}', device='${WHISPER_DEVICE}', compute_type='${WHISPER_COMPUTE_TYPE}', download_root='/root/.cache/huggingface')"
+# RUN python3 -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL_SIZE}', device='${WHISPER_DEVICE}', compute_type='${WHISPER_COMPUTE_TYPE}', download_root='/root/.cache/huggingface')"
+
+# # Предварительная загрузка модели для анализа кадров
+# RUN python3 -c "from transformers import AutoImageProcessor, AutoModel; processor = AutoImageProcessor.from_pretrained('${VISION_MODEL_NAME:-openai/clip-vit-base-patch32}'); model = AutoModel.from_pretrained('${VISION_MODEL_NAME:-openai/clip-vit-base-patch32}', device_map='${VISION_DEVICE:-cpu}')"
 
 # Копирование приложения
 COPY . .
@@ -46,7 +55,10 @@ COPY . .
 # Создание необходимых директорий для данных
 RUN mkdir -p /app/shared-data/sample-videos \
     /app/shared-data/results \
-    /app/shared-data/audio-checkpoints
+    /app/shared-data/audio-checkpoints \
+    /app/shared-data/frame-checkpoints \
+    /app/shared-data/scenes-with-audio \
+    /app/shared-data/scenes-with-frames
 
 # Открытие порта
 EXPOSE 8000

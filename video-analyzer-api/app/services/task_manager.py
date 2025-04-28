@@ -13,7 +13,9 @@ _task_status = {}
 _task_lock = threading.Lock()
 _RESULTS_DIR = "/app/shared-data/results"
 _SCENES_WITH_AUDIO_DIR = "/app/shared-data/scenes-with-audio"
+_SCENES_WITH_FRAMES_DIR = "/app/shared-data/scenes-with-frames"
 _AUDIO_CHECKPOINTS_DIR = "/app/shared-data/audio-checkpoints"
+_FRAME_CHECKPOINTS_DIR = "/app/shared-data/frame-checkpoints"
 
 def init_task_status_from_files():
     """
@@ -24,7 +26,9 @@ def init_task_status_from_files():
         # Создаем каталоги для результатов, если они не существуют
         os.makedirs(_RESULTS_DIR, exist_ok=True)
         os.makedirs(_SCENES_WITH_AUDIO_DIR, exist_ok=True)
+        os.makedirs(_SCENES_WITH_FRAMES_DIR, exist_ok=True)
         os.makedirs(_AUDIO_CHECKPOINTS_DIR, exist_ok=True)
+        os.makedirs(_FRAME_CHECKPOINTS_DIR, exist_ok=True)
         
         # Ищем все JSON файлы в каталоге результатов
         result_files = glob.glob(os.path.join(_RESULTS_DIR, "*.json"))
@@ -147,6 +151,28 @@ def save_scenes_with_audio(task_id: str, scenes_with_audio: List[Dict[str, Any]]
     except Exception as e:
         logger.error(f"Ошибка при сохранении аудио-анализа сцен для задачи {task_id}: {str(e)}")
 
+def save_scenes_with_frames(task_id: str, scenes_with_frames: List[Dict[str, Any]]) -> None:
+    """
+    Сохраняет результаты анализа кадров сцен в JSON-файл.
+    
+    Args:
+        task_id: Идентификатор задачи
+        scenes_with_frames: Список сцен с результатами анализа кадров
+    """
+    try:
+        # Создаем директорию, если она не существует
+        os.makedirs(_SCENES_WITH_FRAMES_DIR, exist_ok=True)
+        
+        # Сохраняем результаты в JSON-файл
+        output_path = os.path.join(_SCENES_WITH_FRAMES_DIR, f"{task_id}.json")
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(scenes_with_frames, f, ensure_ascii=False, indent=2)
+        
+        logger.info(f"Scenes with frame analysis for task {task_id} saved to {output_path}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении анализа кадров сцен для задачи {task_id}: {str(e)}")
+
 def save_audio_checkpoint(task_id: str, scene_id: str, audio_result: Dict[str, Any]) -> None:
     """
     Сохраняет результат анализа аудио для одной сцены
@@ -212,4 +238,71 @@ def load_audio_checkpoint(task_id: str, scene_id: str) -> Optional[Dict[str, Any
         return checkpoint
     except Exception as e:
         logger.error(f"Error loading audio checkpoint for task_id={task_id}, scene_id={scene_id}: {str(e)}")
+        return None
+
+def save_frame_checkpoint(task_id: str, scene_id: str, frame_result: Dict[str, Any]) -> None:
+    """
+    Сохраняет результат анализа кадров для одной сцены
+    
+    Args:
+        task_id: Идентификатор задачи
+        scene_id: Идентификатор сцены
+        frame_result: Результат анализа кадров
+    """
+    try:
+        # Создаем директорию, если она не существует
+        os.makedirs(_FRAME_CHECKPOINTS_DIR, exist_ok=True)
+        
+        # Формируем имя файла чекпоинта
+        filename = f"{task_id}_{scene_id}.json"
+        filepath = os.path.join(_FRAME_CHECKPOINTS_DIR, filename)
+        
+        # Добавляем метаданные к результату
+        result_with_meta = frame_result.copy()
+        result_with_meta['_meta'] = {
+            'task_id': task_id,
+            'scene_id': scene_id,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Сохраняем чекпоинт
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(result_with_meta, f, ensure_ascii=False, indent=2)
+            
+        logger.info(f"Saved frame analysis checkpoint to {filepath}")
+    except Exception as e:
+        logger.error(f"Error saving frame checkpoint for task_id={task_id}, scene_id={scene_id}: {str(e)}")
+
+def load_frame_checkpoint(task_id: str, scene_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Загружает сохраненный результат анализа кадров для сцены, если он существует
+    
+    Args:
+        task_id: Идентификатор задачи
+        scene_id: Идентификатор сцены
+        
+    Returns:
+        Результат анализа кадров или None, если чекпоинт не найден
+    """
+    try:
+        # Формируем имя файла чекпоинта
+        filename = f"{task_id}_{scene_id}.json"
+        filepath = os.path.join(_FRAME_CHECKPOINTS_DIR, filename)
+        
+        # Проверяем существование файла
+        if not os.path.exists(filepath):
+            return None
+        
+        # Загружаем чекпоинт
+        with open(filepath, 'r', encoding='utf-8') as f:
+            checkpoint = json.load(f)
+        
+        # Удаляем метаданные перед возвратом
+        if '_meta' in checkpoint:
+            del checkpoint['_meta']
+            
+        logger.info(f"Loaded frame checkpoint for task_id={task_id}, scene_id={scene_id}")
+        return checkpoint
+    except Exception as e:
+        logger.error(f"Error loading frame checkpoint for task_id={task_id}, scene_id={scene_id}: {str(e)}")
         return None 

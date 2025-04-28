@@ -10,6 +10,14 @@ class AudioAnalysisResult(BaseModel):
     audio_features: Optional[Dict[str, Any]] = None
     segments: Optional[List[Dict[str, Any]]] = None
 
+class FrameAnalysisResult(BaseModel):
+    """Результаты анализа кадров для сцены"""
+    embeddings: Optional[List[List[float]]] = None
+    num_frames: int = 0
+    frame_info: Optional[List[Dict[str, Any]]] = None
+    embedding_model: Optional[str] = None
+    embedding_dim: Optional[int] = None
+
 class SceneInfo(BaseModel):
     """Информация о сцене из видео"""
     id: str
@@ -21,6 +29,7 @@ class SceneInfo(BaseModel):
     summary: Optional[str] = None
     importance_score: Optional[float] = None
     audio_analysis: Optional[AudioAnalysisResult] = None
+    frame_analysis: Optional[FrameAnalysisResult] = None
 
 class Storyline(BaseModel):
     """Сюжетная линия, состоящая из нескольких сцен"""

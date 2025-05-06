@@ -8,11 +8,16 @@ from moviepy.editor import VideoFileClip
 import cv2
 from transformers import CLIPProcessor, CLIPModel
 from datetime import datetime
+import uuid
+from pathlib import Path
 
 from app.services.base_analyzer import BaseAnalyzer
-from app.services.task_manager import save_frame_checkpoint, load_frame_checkpoint
 
 logger = logging.getLogger(__name__)
+
+# Константы для путей
+_SHARED_DATA_DIR = "/app/shared-data"
+_SCENES_WITH_FRAMES_DIR = os.path.join(_SHARED_DATA_DIR, "scenes-with-frames", "frames")
 
 class FrameAnalyzer(BaseAnalyzer):
     """
@@ -33,6 +38,18 @@ class FrameAnalyzer(BaseAnalyzer):
         self.frames_per_scene = int(os.getenv("FRAMES_PER_SCENE", "3"))  # Количество кадров для анализа из одной сцены
         self.min_scene_duration = float(os.getenv("MIN_SCENE_DURATION", "1.0"))  # Минимальная длительность сцены для анализа
         self.max_scene_duration = float(os.getenv("MAX_SCENE_DURATION", "300.0"))  # Макс. длительность сцены для разбивки
+        
+        # Параметры сохранения кадров
+        self.frames_save_path = os.getenv("FRAMES_SAVE_PATH", _SCENES_WITH_FRAMES_DIR)
+        
+        # Проверяем наличие директории для shared-data
+        if not os.path.exists(_SHARED_DATA_DIR):
+            # Если мы в режиме разработки, используем относительный путь
+            self.frames_save_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "shared-data", "scenes-with-frames")
+        
+        # Инициализируем директорию для сохранения кадров
+        os.makedirs(self.frames_save_path, exist_ok=True)
+        logger.info(f"Frames will be saved to: {self.frames_save_path}")
         
         # Инициализируем модель для анализа изображений
         logger.info(f"Initializing vision model: {self.model_name}, device={self.device}, compute_type={self.compute_type}")
@@ -60,8 +77,7 @@ class FrameAnalyzer(BaseAnalyzer):
                 - video_path: Путь к видеофайлу
                 - start_time: Начальное время сцены (в секундах)
                 - end_time: Конечное время сцены (в секундах)
-                - task_id: Опционально, ID задачи для сохранения чекпоинтов
-                - scene_id: Опционально, ID сцены для сохранения чекпоинтов
+                - scene_id: ID сцены для именования файлов
             **kwargs: Дополнительные параметры
             
         Returns:
@@ -71,23 +87,15 @@ class FrameAnalyzer(BaseAnalyzer):
         video_path = data.get('video_path')
         start_time = data.get('start_time')
         end_time = data.get('end_time')
-        task_id = data.get('task_id')
         scene_id = data.get('scene_id')
         
         # Проверяем наличие всех необходимых параметров
         if not self._validate_input_parameters(video_path, start_time, end_time):
             return self._create_empty_result()
         
-        # Проверяем наличие сохраненного чекпоинта для этой сцены
-        if task_id and scene_id:
-            checkpoint = load_frame_checkpoint(task_id, scene_id)
-            if checkpoint:
-                logger.info(f"Loaded frame analysis checkpoint for task_id={task_id}, scene_id={scene_id}")
-                return checkpoint
-        
         # Логируем информацию о начале анализа
         duration = end_time - start_time
-        logger.info(f"Analyzing frames for segment {start_time:.2f}s - {end_time:.2f}s (duration: {duration:.2f}s)")
+        logger.info(f"Analyzing frames for scene {scene_id if scene_id else ''}: {start_time:.2f}s - {end_time:.2f}s (duration: {duration:.2f}s)")
         
         # Определяем количество кадров для анализа в зависимости от длительности сцены
         num_frames = self._determine_frames_count(duration)
@@ -102,7 +110,7 @@ class FrameAnalyzer(BaseAnalyzer):
                 return self._create_empty_result()
             
             # Создаем эмбеддинги для извлеченных кадров
-            embeddings, frame_info = self._create_frame_embeddings(frames, start_time, end_time)
+            embeddings, frame_info = self._create_frame_embeddings(frames, start_time, end_time, scene_id)
             
             # Формируем результат
             result = {
@@ -112,29 +120,12 @@ class FrameAnalyzer(BaseAnalyzer):
                 "embedding_model": self.model_name,
                 "embedding_dim": embeddings.shape[1] if isinstance(embeddings, np.ndarray) else None
             }
-            
-            # Сохраняем результат в чекпоинт
-            if task_id and scene_id:
-                save_frame_checkpoint(task_id, scene_id, result)
                 
             return result
             
         except Exception as e:
             logger.error(f"Error during frame analysis: {str(e)}")
             return self._create_empty_result()
-    
-    def analyze_scene_frames(self, video_path: str, start_time: float, end_time: float, 
-                           task_id: Optional[str] = None, scene_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Удобный метод для анализа кадров сцены (обертка над analyze)
-        """
-        return self.analyze({
-            'video_path': video_path,
-            'start_time': start_time,
-            'end_time': end_time,
-            'task_id': task_id,
-            'scene_id': scene_id
-        })
     
     def _validate_input_parameters(self, video_path: str, start_time: Optional[float], 
                                    end_time: Optional[float]) -> bool:
@@ -194,6 +185,14 @@ class FrameAnalyzer(BaseAnalyzer):
         frames = []
         duration = end_time - start_time
         
+        # Добавляем небольшой отступ для последнего кадра (100 миллисекунд)
+        end_offset_ms = 100  # миллисекунды
+        end_offset = end_offset_ms / 1000.0  # в секундах
+        
+        # Убедимся, что отступ не больше половины длительности сцены
+        safe_end_offset = min(end_offset, duration / 2)
+        adjusted_end_time = end_time - safe_end_offset
+        
         try:
             # Открываем видеофайл
             with VideoFileClip(video_path) as video:
@@ -206,8 +205,20 @@ class FrameAnalyzer(BaseAnalyzer):
                     # Если нужен только один кадр, берем из середины сцены
                     frame_times = [start_time + duration / 2]
                 else:
-                    # Равномерно распределяем кадры по времени
-                    frame_times = [start_time + i * duration / (num_frames - 1) for i in range(num_frames)]
+                    # Равномерно распределяем кадры по времени с учетом отступа в конце
+                    adjusted_duration = adjusted_end_time - start_time
+                    
+                    if num_frames == 2:
+                        # Для двух кадров: один в начале, один с отступом от конца
+                        frame_times = [start_time, adjusted_end_time]
+                    else:
+                        # Для более чем двух кадров: равномерно распределяем
+                        frame_times = [
+                            start_time + i * adjusted_duration / (num_frames - 1) 
+                            for i in range(num_frames)
+                        ]
+                
+                logger.debug(f"Extracting frames at times: {[f'{t:.2f}s' for t in frame_times]}")
                 
                 # Извлекаем кадры в указанные временные точки
                 for t in frame_times:
@@ -224,7 +235,7 @@ class FrameAnalyzer(BaseAnalyzer):
                     frames.append(frame_bgr)
                     logger.debug(f"Extracted frame at time {t:.2f}s")
                 
-                logger.info(f"Extracted {len(frames)} frames from time range {start_time:.2f}s - {end_time:.2f}s")
+                logger.info(f"Extracted {len(frames)} frames from time range {start_time:.2f}s - {end_time:.2f}s (with {safe_end_offset*1000:.0f}ms end offset)")
                 return frames
                 
         except Exception as e:
@@ -232,14 +243,17 @@ class FrameAnalyzer(BaseAnalyzer):
             return []
     
     def _create_frame_embeddings(self, frames: List[np.ndarray], 
-                               start_time: float, end_time: float) -> Tuple[np.ndarray, List[Dict[str, Any]]]:
+                               start_time: float, end_time: float,
+                               scene_id: Optional[str] = None) -> Tuple[np.ndarray, List[Dict[str, Any]]]:
         """
         Создает эмбеддинги для кадров с использованием модели компьютерного зрения.
+        Также сохраняет кадры на диск и добавляет пути к ним в информацию о кадрах.
         
         Args:
             frames: Список кадров для анализа
             start_time: Начальное время сцены
             end_time: Конечное время сцены
+            scene_id: ID сцены для именования файлов
             
         Returns:
             Кортеж из массива эмбеддингов и информации о кадрах
@@ -252,6 +266,13 @@ class FrameAnalyzer(BaseAnalyzer):
         frame_info = []
         
         try:
+            # Определяем директорию для сохранения кадров
+            frames_dir = self.frames_save_path
+            os.makedirs(frames_dir, exist_ok=True)
+            
+            # Формируем ID сцены для имени файла
+            scene_identifier = scene_id if scene_id else f"scene_{start_time:.2f}_{end_time:.2f}"
+            
             # Обрабатываем каждый кадр
             for i, frame in enumerate(frames):
                 # Вычисляем примерное время кадра
@@ -287,13 +308,22 @@ class FrameAnalyzer(BaseAnalyzer):
                 
                 frame_embeddings.append(embedding)
                 
-                # Добавляем информацию о кадре
+                # Создаем имя файла для кадра с ID сцены
+                frame_filename = f"frame_{scene_identifier}_{i}.jpg"
+                frame_path = os.path.join(frames_dir, frame_filename)
+                
+                # Сохраняем кадр на диск
+                cv2.imwrite(frame_path, frame)
+                
+                # Сохраняем информацию о кадре
                 frame_info.append({
                     "time": float(frame_time),
-                    "relative_position": i / max(1, len(frames) - 1)  # От 0 до 1
+                    "relative_position": i / max(1, len(frames) - 1),  # От 0 до 1
+                    "frame_path": frame_path,
+                    "frame_filename": frame_filename
                 })
                 
-                logger.debug(f"Created embedding for frame at time {frame_time:.2f}s")
+                logger.debug(f"Saved frame to {frame_path} and created embedding for time {frame_time:.2f}s")
             
             # Объединяем все эмбеддинги в один массив
             if frame_embeddings:

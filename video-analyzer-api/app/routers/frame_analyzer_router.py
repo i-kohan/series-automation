@@ -2,7 +2,7 @@ import os
 import logging
 import json
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.frame_analyzer import FrameAnalyzer
@@ -15,24 +15,16 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
+
 class FrameAnalysisRequest(BaseModel):
     """Запрос на анализ кадров видео"""
     filename: str
-    task_id: Optional[str] = None
 
 class FrameAnalysisResponse(BaseModel):
     """Ответ на запрос анализа кадров"""
     status: str
     message: str
-    task_id: str
-    scenes_processed: int = 0
-    frames_analyzed: int = 0
-
-class FrameAnalysisResultResponse(BaseModel):
-    """Ответ с результатами анализа кадров"""
-    task_id: str
-    status: str
-    message: str
+    output_file: str
     scenes_processed: int = 0
     frames_analyzed: int = 0
     results: Optional[List[Dict[str, Any]]] = None
@@ -69,34 +61,42 @@ def load_scenes() -> List[Dict[str, Any]]:
         logger.error(f"Ошибка при загрузке сцен: {str(e)}")
         return []
 
-def save_scenes_with_frames(scenes_with_frames: List[Dict[str, Any]], task_id: str) -> None:
-    """Сохраняет сцены с результатами анализа кадров в файл"""
+def save_scenes_with_frames(scenes_with_frames: List[Dict[str, Any]], output_filename: str) -> str:
+    """
+    Сохраняет сцены с результатами анализа кадров в файл
+    
+    Args:
+        scenes_with_frames: Список сцен с результатами анализа
+        output_filename: Имя выходного файла без расширения
+        
+    Returns:
+        Путь к сохраненному файлу
+    """
     try:
         data_root = get_data_root()
         output_dir = os.path.join(data_root, "scenes-with-frames")
         os.makedirs(output_dir, exist_ok=True)
         
-        output_path = os.path.join(output_dir, f"{task_id}.json")
+        output_path = os.path.join(output_dir, f"{output_filename}.json")
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(scenes_with_frames, f, ensure_ascii=False, indent=2)
             
         logger.info(f"Сохранены результаты анализа кадров в {output_path}")
+        return output_path
     except Exception as e:
         logger.error(f"Ошибка при сохранении результатов анализа кадров: {str(e)}")
+        return ""
 
 @router.post("/analyze-frames", response_model=FrameAnalysisResponse)
-async def analyze_frames(
-    request: FrameAnalysisRequest,
-    background_tasks: BackgroundTasks
-) -> FrameAnalysisResponse:
+async def analyze_frames(request: FrameAnalysisRequest) -> FrameAnalysisResponse:
     """
     Анализирует кадры для всех сцен видео и создает их эмбеддинги.
     
     Args:
-        request: Данные запроса содержащие имя файла и опционально task_id
+        request: Данные запроса содержащие имя файла
     
     Returns:
-        Информация о статусе запуска анализа
+        Информация о результатах анализа с данными по всем сценам
     """
     # Проверяем наличие видеофайла
     video_filename = request.filename
@@ -111,44 +111,16 @@ async def analyze_frames(
     if not scenes:
         raise HTTPException(status_code=404, detail="Сцены не найдены. Сначала необходимо выполнить анализ видео.")
     
-    # Генерируем task_id если он не был предоставлен
-    task_id = request.task_id or f"frames_{os.path.splitext(video_filename)[0]}"
-    
-    # Запускаем анализ кадров в фоновом режиме
-    background_tasks.add_task(
-        run_frame_analysis,
-        video_path=video_path,
-        scenes=scenes,
-        task_id=task_id
-    )
-    
-    return FrameAnalysisResponse(
-        status="processing",
-        message=f"Анализ кадров для {len(scenes)} сцен запущен в фоновом режиме",
-        task_id=task_id,
-        scenes_processed=0,
-        frames_analyzed=0
-    )
-
-def run_frame_analysis(
-    video_path: str,
-    scenes: List[Dict[str, Any]],
-    task_id: str
-) -> None:
-    """
-    Выполняет анализ кадров для всех сцен.
-    
-    Args:
-        video_path: Путь к видеофайлу
-        scenes: Список сцен для анализа
-        task_id: Идентификатор задачи
-    """
     try:
         # Создаем анализатор кадров
         frame_analyzer = FrameAnalyzer()
         scenes_with_frames = []
         total_frames_analyzed = 0
         
+        # Формируем имя выходного файла и директорию для кадров на основе имени видео
+        base_output_name = os.path.splitext(video_filename)[0]
+        output_filename = f"frames_{base_output_name}"
+
         logger.info(f"Запуск анализа кадров для {len(scenes)} сцен из видео {os.path.basename(video_path)}")
         
         # Обрабатываем каждую сцену
@@ -161,14 +133,13 @@ def run_frame_analysis(
                 start_time = scene.get('start_time', 0)
                 end_time = scene.get('end_time', 0)
                 
-                # Анализируем кадры сцены
-                frame_analysis_result = frame_analyzer.analyze_scene_frames(
-                    video_path=video_path,
-                    start_time=start_time,
-                    end_time=end_time,
-                    task_id=task_id,
-                    scene_id=scene_id
-                )
+                # Анализируем кадры сцены, передавая ID сцены и директорию для сохранения
+                frame_analysis_result = frame_analyzer.analyze({
+                    'video_path': video_path,
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'scene_id': scene_id,
+                })
                 
                 # Добавляем результаты анализа к сцене
                 scene_with_frames = scene.copy()
@@ -187,117 +158,28 @@ def run_frame_analysis(
         
         # Сохраняем результаты
         logger.info(f"Анализ кадров завершен: обработано {len(scenes_with_frames)} сцен, {total_frames_analyzed} кадров")
-        save_scenes_with_frames(scenes_with_frames, task_id)
+        
+        # Сохраняем JSON с результатами анализа
+        output_path = save_scenes_with_frames(scenes_with_frames, output_filename)
+        
+        # Формируем и возвращаем ответ
+        return FrameAnalysisResponse(
+            status="success",
+            message=f"Успешно проанализировано {len(scenes_with_frames)} сцен, {total_frames_analyzed} кадров",
+            output_file=output_path,
+            scenes_processed=len(scenes_with_frames),
+            frames_analyzed=total_frames_analyzed,
+            results=scenes_with_frames
+        )
         
     except Exception as e:
         logger.error(f"Ошибка при анализе кадров: {str(e)}")
-
-@router.get("/results/{task_id}", response_model=FrameAnalysisResultResponse)
-async def get_frame_analysis_results(task_id: str) -> FrameAnalysisResultResponse:
-    """
-    Получает результаты анализа кадров по task_id.
-    
-    Args:
-        task_id: Идентификатор задачи анализа кадров
-        
-    Returns:
-        Результаты анализа кадров для всех сцен
-    """
-    try:
-        # Проверяем наличие файла с результатами
-        data_root = get_data_root()
-        results_path = os.path.join(data_root, "scenes-with-frames", f"{task_id}.json")
-        
-        if not os.path.exists(results_path):
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Результаты анализа кадров для задачи {task_id} не найдены"
-            )
-        
-        # Загружаем результаты
-        with open(results_path, "r", encoding="utf-8") as f:
-            results = json.load(f)
-        
-        # Подсчет количества проанализированных кадров
-        frames_analyzed = 0
-        for scene in results:
-            if "frame_analysis" in scene and scene["frame_analysis"]:
-                frames_analyzed += scene["frame_analysis"].get("num_frames", 0)
-        
-        return FrameAnalysisResultResponse(
-            task_id=task_id,
-            status="completed",
-            message=f"Результаты анализа кадров для задачи {task_id}",
-            scenes_processed=len(results),
-            frames_analyzed=frames_analyzed,
-            results=results
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Ошибка при получении результатов анализа кадров: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Ошибка при получении результатов анализа кадров: {str(e)}"
+            detail=f"Ошибка при анализе кадров: {str(e)}"
         )
 
-@router.get("/jobs", response_model=List[Dict[str, Any]])
-async def list_frame_analysis_jobs() -> List[Dict[str, Any]]:
-    """
-    Получает список всех заданий анализа кадров.
-    
-    Returns:
-        Список заданий с информацией о количестве сцен и кадров
-    """
-    try:
-        data_root = get_data_root()
-        results_dir = os.path.join(data_root, "scenes-with-frames")
-        
-        if not os.path.exists(results_dir):
-            return []
-        
-        # Список всех файлов в директории результатов
-        result_files = [f for f in os.listdir(results_dir) if f.endswith('.json')]
-        
-        jobs = []
-        for filename in result_files:
-            try:
-                task_id = os.path.splitext(filename)[0]
-                file_path = os.path.join(results_dir, filename)
-                
-                # Получаем информацию о файле
-                file_stat = os.stat(file_path)
-                
-                # Загружаем результаты
-                with open(file_path, "r", encoding="utf-8") as f:
-                    results = json.load(f)
-                
-                # Подсчет количества проанализированных кадров
-                frames_analyzed = 0
-                for scene in results:
-                    if "frame_analysis" in scene and scene["frame_analysis"]:
-                        frames_analyzed += scene["frame_analysis"].get("num_frames", 0)
-                
-                jobs.append({
-                    "task_id": task_id,
-                    "status": "completed",
-                    "scenes_processed": len(results),
-                    "frames_analyzed": frames_analyzed,
-                    "file_size_bytes": file_stat.st_size,
-                    "created_at": file_stat.st_ctime,
-                    "modified_at": file_stat.st_mtime
-                })
-                
-            except Exception as e:
-                logger.error(f"Ошибка при обработке файла {filename}: {str(e)}")
-                continue
-        
-        # Сортируем задания по времени создания (новые вначале)
-        jobs.sort(key=lambda x: x["modified_at"], reverse=True)
-        
-        return jobs
-        
-    except Exception as e:
-        logger.error(f"Ошибка при получении списка заданий анализа кадров: {str(e)}")
-        return [] 
+# Пример использования API с помощью curl:
+# curl -X POST "http://localhost:8000/api/frame-analyzer/analyze-frames" \
+#   -H "Content-Type: application/json" \
+#   -d '{"filename": "example.mp4"}' 

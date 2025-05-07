@@ -2,6 +2,7 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from transformers import CLIPProcessor, CLIPModel
 import logging
+import os
 from typing import Dict, List, Any
 import torch
 from sklearn.preprocessing import normalize
@@ -16,12 +17,27 @@ class SimpleStorylineMatcher:
 
     def _setup_model(self):
         """Настраивает модель, автоматически используя GPU при доступности"""
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        if self.device == "cuda":
-            logging.info("Используется GPU для ускорения вычислений")
+        # Получаем настройки из переменных окружения
+        model_name = os.environ.get("VISION_MODEL_NAME", "openai/clip-vit-base-patch32")
+        device_preference = os.environ.get("VISION_DEVICE", "cuda")
+        compute_type = os.environ.get("VISION_COMPUTE_TYPE", "float16")
         
-        self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(self.device)
-        self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        # Определяем устройство на основе настроек
+        if device_preference.lower() == "cuda" and torch.cuda.is_available():
+            self.device = "cuda"
+            logging.info(f"SimpleStorylineMatcher: Используется GPU с моделью {model_name}")
+        else:
+            self.device = "cpu"
+            logging.info(f"SimpleStorylineMatcher: Используется CPU с моделью {model_name}")
+        
+        # Определяем тип данных
+        self.dtype = torch.float16 if compute_type.lower() == "float16" and self.device == "cuda" else torch.float32
+        
+        # Загружаем модель с нужными параметрами
+        self.model = CLIPModel.from_pretrained(model_name, torch_dtype=self.dtype).to(self.device)
+        self.processor = CLIPProcessor.from_pretrained(model_name)
+        
+        logging.info(f"SimpleStorylineMatcher: Модель {model_name} успешно загружена на {self.device}")
 
     def _move_to_device(self, inputs):
         """Перемещает входные тензоры на нужное устройство (GPU/CPU)"""

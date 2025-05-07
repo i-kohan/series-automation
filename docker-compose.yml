@@ -1,5 +1,3 @@
-version: "3"
-
 services:
   video-analyzer:
     build:
@@ -11,7 +9,10 @@ services:
     volumes:
       - ./shared-data:/app/shared-data
       - ./video-analyzer-api/app:/app/app
+      - ./video-analyzer-api/scripts:/app/scripts
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    entrypoint: ["python3", "scripts/check_models.py"]
+    command: python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

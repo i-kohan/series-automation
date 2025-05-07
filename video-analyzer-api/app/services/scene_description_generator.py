@@ -2,30 +2,68 @@ import numpy as np
 import torch
 from transformers import Blip2Processor, Blip2ForConditionalGeneration
 import logging
+import os
 from typing import Dict, List, Any, Optional
 from PIL import Image
+
+# Создаём именованный логгер
+logger = logging.getLogger(__name__)
 
 class SceneDescriptionGenerator:
     def __init__(self):
         # Инициализация модели BLIP2 с автоматической поддержкой GPU
+        logger.info("Инициализация генератора описаний сцен")
         self._setup_model()
 
     def _setup_model(self):
         """Настраивает модель BLIP2, автоматически используя GPU при доступности"""
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        if self.device == "cuda":
-            logging.info("Используется GPU для ускорения вычислений BLIP2")
+        # Получаем настройки из переменных окружения
+        model_name = os.environ.get("BLIP2_MODEL_NAME", "Salesforce/blip2-opt-2.7b")
+        device_preference = os.environ.get("BLIP2_DEVICE", "cuda")
+        compute_type = os.environ.get("BLIP2_COMPUTE_TYPE", "float16")
+        
+        logger.info(f"Загружаю BLIP2 с настройками: модель={model_name}, устройство={device_preference}, тип вычислений={compute_type}")
+        
+        # Определяем устройство: если запрошено CUDA, проверяем доступность
+        if device_preference.lower() == "cuda" and torch.cuda.is_available():
+            self.device = "cuda"
+            logger.info("Используется GPU для ускорения вычислений BLIP2")
         else:
-            logging.info("Используется CPU для BLIP2")
+            self.device = "cpu"
+            logger.info("Используется CPU для BLIP2")
+        
+        # Определяем тип данных на основе compute_type
+        if compute_type.lower() == "float16" and self.device == "cuda":
+            self.dtype = torch.float16
+            logger.info("Используется half precision (float16) для модели BLIP2")
+        else:
+            self.dtype = torch.float32
+            logger.info("Используется single precision (float32) для модели BLIP2")
         
         # Инициализация модели и процессора
-        self.processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
-        self.model = Blip2ForConditionalGeneration.from_pretrained(
-            "Salesforce/blip2-opt-2.7b", 
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
-        ).to(self.device)
+        logger.info(f"Начинаю загрузку процессора BLIP2 ({model_name})...")
+        self.processor = Blip2Processor.from_pretrained(model_name)
         
-        logging.info("Модель BLIP2 успешно загружена")
+        logger.info("Процессор BLIP2 загружен. Начинаю загрузку модели BLIP2 (это может занять несколько минут)...")
+        
+        # Оптимизируем загрузку модели для CPU
+        if self.device == "cpu":
+            logger.info("Используется CPU - применяю оптимизации для снижения нагрузки")
+            # Используем низкоточную модель для CPU
+            self.model = Blip2ForConditionalGeneration.from_pretrained(
+                model_name,
+                torch_dtype=self.dtype,
+                low_cpu_mem_usage=True,  # Оптимизация для низкого использования памяти
+                device_map="auto"        # Автоматическое распределение слоев, может ускорить инференс
+            )
+        else:
+            # Стандартная загрузка для GPU
+            self.model = Blip2ForConditionalGeneration.from_pretrained(
+                model_name, 
+                torch_dtype=self.dtype
+            ).to(self.device)
+        
+        logger.info(f"Модель BLIP2 успешно загружена на устройство: {self.device}, тип данных: {self.dtype}")
 
     def _move_to_device(self, inputs):
         """Перемещает входные тензоры на нужное устройство (GPU/CPU)"""
@@ -45,23 +83,23 @@ class SceneDescriptionGenerator:
         """
         scene_id = scene.get('id')
         if not scene_id:
-            logging.warning("Сцена не имеет ID, пропускаю")
+            logger.warning("Сцена не имеет ID, пропускаю")
             return None
             
         # Проверяем наличие кадров
         if 'frame_analysis' not in scene or 'frame_info' not in scene['frame_analysis']:
-            logging.warning(f"Сцена {scene_id} не содержит информации о кадрах, пропускаю")
+            logger.warning(f"Сцена {scene_id} не содержит информации о кадрах, пропускаю")
             return None
             
         frame_info = scene['frame_analysis']['frame_info']
         if not frame_info:
-            logging.warning(f"Сцена {scene_id} имеет пустой список кадров, пропускаю")
+            logger.warning(f"Сцена {scene_id} имеет пустой список кадров, пропускаю")
             return None
             
         # Берем первый кадр
         first_frame = frame_info[0]
         if 'frame_path' not in first_frame:
-            logging.warning(f"Первый кадр сцены {scene_id} не содержит путь, пропускаю")
+            logger.warning(f"Первый кадр сцены {scene_id} не содержит путь, пропускаю")
             return None
             
         return first_frame['frame_path']
@@ -79,26 +117,30 @@ class SceneDescriptionGenerator:
         """
         try:
             # Загружаем изображение из файла
+            logger.info(f"Загрузка изображения из {frame_path}")
             image = Image.open(frame_path)
             
             # Подготовка входных данных
+            logger.info("Подготовка входных данных для модели")
             inputs = self.processor(images=image, text=prompt, return_tensors="pt")
             inputs = self._move_to_device(inputs)
             
             # Генерация описания
+            logger.info("Генерация описания для кадра")
             with torch.no_grad():
                 generated_ids = self.model.generate(
                     **inputs,
-                    max_length=100,
-                    num_beams=5,
-                    min_length=10,
-                    do_sample=True,
-                    top_p=0.9,
-                    temperature=0.7
+                    max_new_tokens=50,
+                    num_beams=3,
+                    min_length=5,
+                    do_sample=False,
+                    repetition_penalty=1.5,
+                    length_penalty=1.0
                 )
             
             # Декодирование результата
             generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+            logger.info("Описание успешно сгенерировано")
             
             # Освобождение памяти GPU, если необходимо
             if self.device == "cuda":
@@ -107,7 +149,7 @@ class SceneDescriptionGenerator:
             return generated_text
             
         except Exception as e:
-            logging.error(f"Ошибка при генерации описания кадра {frame_path}: {str(e)}")
+            logger.error(f"Ошибка при генерации описания кадра {frame_path}: {str(e)}")
             return f"Ошибка при анализе кадра: {str(e)}"
 
     def generate_descriptions(self, scenes):
@@ -123,15 +165,15 @@ class SceneDescriptionGenerator:
         result = {}
         total_scenes = len(scenes)
         
-        logging.info(f"Начало генерации описаний для {total_scenes} сцен")
+        logger.info(f"Начало генерации описаний для {total_scenes} сцен")
         
         for i, scene in enumerate(scenes):
             scene_id = scene.get('id')
             if not scene_id:
-                logging.warning(f"Сцена {i+1}/{total_scenes} не имеет ID, пропускаю")
+                logger.warning(f"Сцена {i+1}/{total_scenes} не имеет ID, пропускаю")
                 continue
                 
-            logging.info(f"Обработка сцены {i+1}/{total_scenes}: {scene_id}")
+            logger.info(f"Обработка сцены {i+1}/{total_scenes}: {scene_id}")
             
             # Валидируем сцену и получаем путь к первому кадру
             frame_path = self._validate_scene(scene)
@@ -152,5 +194,5 @@ class SceneDescriptionGenerator:
             if self.device == "cuda":
                 torch.cuda.empty_cache()
         
-        logging.info(f"Завершена генерация описаний для {len(result)} сцен")
+        logger.info(f"Завершена генерация описаний для {len(result)} сцен")
         return result

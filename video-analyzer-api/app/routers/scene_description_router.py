@@ -1,6 +1,7 @@
 import json
 import os
 import logging
+import time
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -8,6 +9,8 @@ from app.services.scene_description_generator import SceneDescriptionGenerator
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)
+
+scene_description_generator = SceneDescriptionGenerator()
 
 # Создаем роутер
 router = APIRouter(
@@ -49,6 +52,7 @@ def load_scenes(scene_ids=None) -> List[Dict[str, Any]]:
     try:
         data_root = get_data_root()
         scenes_path = os.path.join(data_root, "scenes-with-frames/frames_360.json")
+        logger.info(f"Загрузка данных сцен из {scenes_path}")
         with open(scenes_path, "r", encoding="utf-8") as f:
             scenes_data = json.load(f)
         
@@ -88,9 +92,16 @@ async def generate_descriptions(request: SceneDescriptionRequest):
     Генерирует описания для сцен (синхронный запрос)
     """
     try:
-        scene_description_generator = SceneDescriptionGenerator()
+        start_time = time.time()
+        logger.info("Запуск генерации описаний сцен")
+        
+        # Создание генератора описаний (это займёт время на загрузку модели)
+        logger.info("Инициализация генератора описаний сцен (загрузка модели может занять несколько минут)")
+        model_load_time = time.time() - start_time
+        logger.info(f"Модель загружена за {model_load_time:.2f} секунд")
 
         # Загружаем сцены
+        logger.info("Загрузка данных сцен")
         scenes = load_scenes(request.scene_ids)
         
         if not scenes:
@@ -108,9 +119,13 @@ async def generate_descriptions(request: SceneDescriptionRequest):
         logger.info(f"Начало генерации описаний для {len(scenes)} сцен")
         
         # Генерируем описания
+        generation_start = time.time()
         descriptions = scene_description_generator.generate_descriptions(scenes)
+        generation_time = time.time() - generation_start
         
-        logger.info(f"Генерация описаний успешно завершена для {len(descriptions)} сцен")
+        total_time = time.time() - start_time
+        logger.info(f"Генерация описаний успешно завершена для {len(descriptions)} сцен за {generation_time:.2f} сек.")
+        logger.info(f"Общее время выполнения запроса: {total_time:.2f} сек.")
         
         return {
             "status": "success",

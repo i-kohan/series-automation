@@ -28,4 +28,8 @@ pillow==10.3.0
 
 # Библиотеки для генерации описаний изображений
 bitsandbytes>=0.41.0
-sentencepiece>=0.1.99 
+sentencepiece>=0.1.99
+
+# Оптимизация для CPU
+optimum>=1.8.6
+onnxruntime>=1.14.1 

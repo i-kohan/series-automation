@@ -1,75 +1,19 @@
-import numpy as np
-import torch
-from transformers import Blip2Processor, Blip2ForConditionalGeneration
 import logging
 import os
 from typing import Dict, List, Any, Optional
 from PIL import Image
+
+# Импортируем клиент Replicate
+from app.services.blip2_replicate_client import Blip2ReplicateClient
 
 # Создаём именованный логгер
 logger = logging.getLogger(__name__)
 
 class SceneDescriptionGenerator:
     def __init__(self):
-        # Инициализация модели BLIP2 с автоматической поддержкой GPU
-        logger.info("Инициализация генератора описаний сцен")
-        self._setup_model()
-
-    def _setup_model(self):
-        """Настраивает модель BLIP2, автоматически используя GPU при доступности"""
-        # Получаем настройки из переменных окружения
-        model_name = os.environ.get("BLIP2_MODEL_NAME", "Salesforce/blip2-opt-2.7b")
-        device_preference = os.environ.get("BLIP2_DEVICE", "cuda")
-        compute_type = os.environ.get("BLIP2_COMPUTE_TYPE", "float16")
-        
-        logger.info(f"Загружаю BLIP2 с настройками: модель={model_name}, устройство={device_preference}, тип вычислений={compute_type}")
-        
-        # Определяем устройство: если запрошено CUDA, проверяем доступность
-        if device_preference.lower() == "cuda" and torch.cuda.is_available():
-            self.device = "cuda"
-            logger.info("Используется GPU для ускорения вычислений BLIP2")
-        else:
-            self.device = "cpu"
-            logger.info("Используется CPU для BLIP2")
-        
-        # Определяем тип данных на основе compute_type
-        if compute_type.lower() == "float16" and self.device == "cuda":
-            self.dtype = torch.float16
-            logger.info("Используется half precision (float16) для модели BLIP2")
-        else:
-            self.dtype = torch.float32
-            logger.info("Используется single precision (float32) для модели BLIP2")
-        
-        # Инициализация модели и процессора
-        logger.info(f"Начинаю загрузку процессора BLIP2 ({model_name})...")
-        self.processor = Blip2Processor.from_pretrained(model_name)
-        
-        logger.info("Процессор BLIP2 загружен. Начинаю загрузку модели BLIP2 (это может занять несколько минут)...")
-        
-        # Оптимизируем загрузку модели для CPU
-        if self.device == "cpu":
-            logger.info("Используется CPU - применяю оптимизации для снижения нагрузки")
-            # Используем низкоточную модель для CPU
-            self.model = Blip2ForConditionalGeneration.from_pretrained(
-                model_name,
-                torch_dtype=self.dtype,
-                low_cpu_mem_usage=True,  # Оптимизация для низкого использования памяти
-                device_map="auto"        # Автоматическое распределение слоев, может ускорить инференс
-            )
-        else:
-            # Стандартная загрузка для GPU
-            self.model = Blip2ForConditionalGeneration.from_pretrained(
-                model_name, 
-                torch_dtype=self.dtype
-            ).to(self.device)
-        
-        logger.info(f"Модель BLIP2 успешно загружена на устройство: {self.device}, тип данных: {self.dtype}")
-
-    def _move_to_device(self, inputs):
-        """Перемещает входные тензоры на нужное устройство (GPU/CPU)"""
-        if self.device == "cuda":
-            inputs = {k: v.to(self.device) if hasattr(v, 'to') else v for k, v in inputs.items()}
-        return inputs
+        # Инициализация клиента Replicate
+        logger.info("Инициализация генератора описаний сцен с использованием Replicate API")
+        self.replicate_client = Blip2ReplicateClient()
 
     def _validate_scene(self, scene: Dict[str, Any]) -> Optional[str]:
         """
@@ -106,7 +50,7 @@ class SceneDescriptionGenerator:
 
     def generate_description_for_frame(self, frame_path: str, prompt="Опишите, что происходит на изображении:"):
         """
-        Генерирует описание для одного кадра
+        Генерирует описание для одного кадра с использованием Replicate API
         
         Args:
             frame_path: Путь к JPG-файлу с кадром
@@ -116,37 +60,12 @@ class SceneDescriptionGenerator:
             str: Описание кадра
         """
         try:
-            # Загружаем изображение из файла
-            logger.info(f"Загрузка изображения из {frame_path}")
-            image = Image.open(frame_path)
+            # Используем клиент Replicate для генерации описания
+            logger.info(f"Запрос описания для изображения {frame_path}")
+            description = self.replicate_client.run(frame_path, prompt)
+            logger.info("Описание успешно получено")
             
-            # Подготовка входных данных
-            logger.info("Подготовка входных данных для модели")
-            inputs = self.processor(images=image, text=prompt, return_tensors="pt")
-            inputs = self._move_to_device(inputs)
-            
-            # Генерация описания
-            logger.info("Генерация описания для кадра")
-            with torch.no_grad():
-                generated_ids = self.model.generate(
-                    **inputs,
-                    max_new_tokens=50,
-                    num_beams=3,
-                    min_length=5,
-                    do_sample=False,
-                    repetition_penalty=1.5,
-                    length_penalty=1.0
-                )
-            
-            # Декодирование результата
-            generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
-            logger.info("Описание успешно сгенерировано")
-            
-            # Освобождение памяти GPU, если необходимо
-            if self.device == "cuda":
-                torch.cuda.empty_cache()
-            
-            return generated_text
+            return description
             
         except Exception as e:
             logger.error(f"Ошибка при генерации описания кадра {frame_path}: {str(e)}")
@@ -189,10 +108,6 @@ class SceneDescriptionGenerator:
                 description = f"{description} (Диалог: '{transcript}')"
             
             result[scene_id] = description
-            
-            # Освобождаем память после каждой сцены
-            if self.device == "cuda":
-                torch.cuda.empty_cache()
         
         logger.info(f"Завершена генерация описаний для {len(result)} сцен")
         return result

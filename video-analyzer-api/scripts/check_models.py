@@ -25,11 +25,11 @@ def get_env(name, default):
 
 # Конфигурация моделей
 MODELS = {
-    "BLIP2": {
-        "model_id": get_env("BLIP2_MODEL_NAME", "Salesforce/blip2-opt-2.7b"),
-        "cache_path": os.path.join(os.environ.get("HF_HOME", "/root/.cache/huggingface"), 
-                                  f"models--{get_env('BLIP2_MODEL_NAME', 'Salesforce/blip2-opt-2.7b').replace('/', '--')}")
-    },
+    # "BLIP2": {
+    #     "model_id": get_env("BLIP2_MODEL_NAME", "Salesforce/blip2-opt-2.7b"),
+    #     "cache_path": os.path.join(os.environ.get("HF_HOME", "/root/.cache/huggingface"), 
+    #                               f"models--{get_env('BLIP2_MODEL_NAME', 'Salesforce/blip2-opt-2.7b').replace('/', '--')}")
+    # },
     "CLIP": {
         "model_id": get_env("VISION_MODEL_NAME", "openai/clip-vit-base-patch32"),
         "cache_path": os.path.join(os.environ.get("HF_HOME", "/root/.cache/huggingface"), 
@@ -192,7 +192,7 @@ def main():
     
     # Проверка и загрузка моделей по очереди
     models_to_check = [
-        ("BLIP2", load_blip2_model),
+        # ("BLIP2", load_blip2_model),
         ("CLIP", load_clip_model),
         ("RuBERT", load_rubert_model),
         ("Whisper", load_whisper_model)

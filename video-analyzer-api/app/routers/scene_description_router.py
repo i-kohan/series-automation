@@ -23,6 +23,7 @@ router = APIRouter(
 class SceneDescriptionRequest(BaseModel):
     scene_ids: Optional[List[str]] = None
     max_scenes: Optional[int] = 10
+    video_name: str = "360"  # Добавляем параметр для имени видео
 
 class SceneDescriptionResponse(BaseModel):
     status: str
@@ -41,6 +42,50 @@ def get_data_root() -> str:
     
     # Возвращаем относительный путь для локальной разработки
     return "../shared-data"
+
+def clean_scene_data(scene: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Очищает данные сцены, оставляя только необходимые поля
+    
+    Args:
+        scene: Исходные данные сцены
+        
+    Returns:
+        Dict[str, Any]: Очищенные данные сцены
+    """
+    # Копируем только нужные поля
+    cleaned_scene = {
+        'id': scene.get('id'),
+        'start_time': scene.get('start_time'),
+        'end_time': scene.get('end_time'),
+        'description': scene.get('description', '')
+    }
+    
+    return cleaned_scene
+
+def save_results(scenes: List[Dict[str, Any]], video_name: str):
+    """
+    Сохраняет результаты в JSON файл
+    
+    Args:
+        scenes: Список сцен с описаниями
+        video_name: Имя видео для имени файла
+    """
+    try:
+        data_root = get_data_root()
+        output_dir = os.path.join(data_root, "scenes-with-summary")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Очищаем данные сцен
+        cleaned_scenes = [clean_scene_data(scene) for scene in scenes]
+        
+        output_file = os.path.join(output_dir, f"{video_name}.json")
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(cleaned_scenes, f, ensure_ascii=False, indent=2)
+        logger.info(f"Результаты сохранены в {output_file}")
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении результатов: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при сохранении результатов: {str(e)}")
 
 def load_scenes(scene_ids=None) -> List[Dict[str, Any]]:
     """
@@ -123,6 +168,15 @@ async def generate_descriptions(request: SceneDescriptionRequest):
         descriptions = scene_description_generator.generate_descriptions(scenes)
         generation_time = time.time() - generation_start
         
+        # Добавляем описания к сценам
+        for scene in scenes:
+            scene_id = scene.get('id')
+            if scene_id in descriptions:
+                scene['description'] = descriptions[scene_id]
+        
+        # Сохраняем результаты
+        save_results(scenes, request.video_name)
+        
         total_time = time.time() - start_time
         logger.info(f"Генерация описаний успешно завершена для {len(descriptions)} сцен за {generation_time:.2f} сек.")
         logger.info(f"Общее время выполнения запроса: {total_time:.2f} сек.")
@@ -137,4 +191,4 @@ async def generate_descriptions(request: SceneDescriptionRequest):
         raise HTTPException(status_code=500, detail=f"Ошибка при генерации описаний: {str(e)}")
 
 # Пример curl команды:
-# curl -X POST "http://localhost:8000/api/scene-descriptions/generate" -H "Content-Type: application/json" -d '{"scene_ids": ["scene_1", "scene_2"], "max_scenes": 5}'
+# curl -X POST "http://localhost:8000/api/scene-descriptions/generate" -H "Content-Type: application/json" -d '{"scene_ids": ["scene_1", "scene_2"], "max_scenes": 5, "video_name": "360"}'

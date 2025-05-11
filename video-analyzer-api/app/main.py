@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any
 
 from app.services.analysis_pipeline import AnalysisPipeline
 from app.services.task_manager import set_task_status, get_analysis_status, init_task_status_from_files, save_result
-from app.routers import episode_matcher, video_cutter, frame_analyzer_router, simple_episode_matcher, scene_description_router
+from app.routers import episode_matcher, video_cutter, frame_analyzer_router, simple_episode_matcher, scene_description_router, story_matcher_router
 
 # Настройка логирования
 logging.basicConfig(
@@ -51,6 +51,7 @@ app.include_router(video_cutter.router)
 app.include_router(frame_analyzer_router.router)
 app.include_router(simple_episode_matcher.router)
 app.include_router(scene_description_router.router)
+app.include_router(story_matcher_router.router)
 
 # Настройка CORS для взаимодействия с фронтендом
 app.add_middleware(

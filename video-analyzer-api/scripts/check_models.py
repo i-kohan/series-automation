@@ -25,11 +25,11 @@ def get_env(name, default):
 
 # Конфигурация моделей
 MODELS = {
-    # "BLIP2": {
-    #     "model_id": get_env("BLIP2_MODEL_NAME", "Salesforce/blip2-opt-2.7b"),
-    #     "cache_path": os.path.join(os.environ.get("HF_HOME", "/root/.cache/huggingface"), 
-    #                               f"models--{get_env('BLIP2_MODEL_NAME', 'Salesforce/blip2-opt-2.7b').replace('/', '--')}")
-    # },
+    "CrossEncoder": {
+        "model_id": get_env("CROSS_ENCODER_MODEL_NAME", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
+        "cache_path": os.path.join(os.environ.get("HF_HOME", "/root/.cache/huggingface"), 
+                                  f"models--{get_env('CROSS_ENCODER_MODEL_NAME', 'cross-encoder/ms-marco-MiniLM-L-6-v2').replace('/', '--')}")
+    },
     "CLIP": {
         "model_id": get_env("VISION_MODEL_NAME", "openai/clip-vit-base-patch32"),
         "cache_path": os.path.join(os.environ.get("HF_HOME", "/root/.cache/huggingface"), 
@@ -174,6 +174,25 @@ def load_whisper_model():
         logger.error(f"❌ Ошибка при загрузке модели Whisper: {str(e)}")
         return False
 
+def load_cross_encoder_model():
+    """Загружает модель CrossEncoder"""
+    start_time = time.time()
+    model_id = MODELS["CrossEncoder"]["model_id"]
+    logger.info(f"Загрузка модели CrossEncoder {model_id}...")
+    
+    try:
+        from sentence_transformers import CrossEncoder
+        
+        logger.info(f"Загрузка модели CrossEncoder...")
+        model = CrossEncoder(model_id)
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"✅ Модель CrossEncoder успешно загружена за {elapsed_time:.2f} сек.")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка при загрузке модели CrossEncoder: {str(e)}")
+        return False
+
 def main():
     """Основная функция для проверки и загрузки моделей"""
     logger.info("Начало проверки моделей...")
@@ -192,7 +211,7 @@ def main():
     
     # Проверка и загрузка моделей по очереди
     models_to_check = [
-        # ("BLIP2", load_blip2_model),
+        ("CrossEncoder", load_cross_encoder_model),
         ("CLIP", load_clip_model),
         ("RuBERT", load_rubert_model),
         ("Whisper", load_whisper_model)

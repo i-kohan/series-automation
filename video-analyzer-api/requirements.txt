@@ -27,3 +27,6 @@ pillow==10.3.0
 
 # Библиотека для работы с Replicate
 replicate>=1.0.6
+
+# Библиотека для анализа текста
+sentence-transformers==4.1.0
